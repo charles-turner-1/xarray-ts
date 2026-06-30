@@ -1,0 +1,162 @@
+/**
+ * {@link Dataset}: a collection of {@link DataArray}s sharing dimensions and
+ * coordinates — the xarray-shaped object produced by {@link openDataset}.
+ *
+ * @module
+ */
+import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
+import { DataArray } from "./dataarray.js";
+import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
+import type {
+  Attrs,
+  Coord,
+  IselSelection,
+  SelOptions,
+  SelSelection,
+  Variable,
+} from "./types.js";
+
+/** Internal assembly input for a Dataset (built by `datasetFromGroup`). */
+export interface DatasetParts {
+  /** All variables (coordinates and data variables) keyed by name. */
+  vars: Map<string, Variable>;
+  /** Eagerly-loaded coordinate values keyed by name. */
+  coords: Map<string, Coord>;
+  /** Names classified as coordinates. */
+  coordNames: Set<string>;
+  /** Names classified as data variables. */
+  dataVarNames: Set<string>;
+  /** Group-level attributes. */
+  attrs: Attrs;
+}
+
+export class Dataset {
+  /** Group-level attributes. */
+  readonly attrs: Attrs;
+
+  /** @internal All variables (coords + data vars). */
+  readonly #vars: Map<string, Variable>;
+  /** @internal Root (full, unsliced) coordinates — what DataArrays slice against. */
+  readonly #rootCoords: Map<string, Coord>;
+  readonly #coordNames: Set<string>;
+  readonly #dataVarNames: Set<string>;
+  /** @internal Original size of each dimension. */
+  readonly #dimSizes: Map<string, number>;
+  /** @internal Cumulative selection per dimension (relative to original axes). */
+  readonly #axesByDim: Map<string, AxisSel>;
+
+  constructor(parts: DatasetParts, axesByDim?: Map<string, AxisSel>) {
+    this.attrs = parts.attrs;
+    this.#vars = parts.vars;
+    this.#rootCoords = parts.coords;
+    this.#coordNames = parts.coordNames;
+    this.#dataVarNames = parts.dataVarNames;
+    this.#dimSizes = computeDimSizes(parts.vars);
+    this.#axesByDim =
+      axesByDim ??
+      new Map([...this.#dimSizes].map(([dim, size]) => [dim, fullAxis(size)]));
+  }
+
+  /** Mapping of dimension name to its current size. */
+  get dims(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [dim, axis] of this.#axesByDim) {
+      if (axis.kind === "slice") out[dim] = axis.length;
+    }
+    return out;
+  }
+
+  /** Coordinates, sliced to the current selection (presentational). */
+  get coords(): Record<string, Coord> {
+    const out: Record<string, Coord> = {};
+    for (const [name, coord] of this.#rootCoords) {
+      out[name] = coord.dims.length === 1
+        ? sliceCoord(coord, this.#axisFor(coord.dims[0]!))
+        : coord;
+    }
+    return out;
+  }
+
+  /** Data variables as lazy {@link DataArray}s, reflecting the current selection. */
+  get data_vars(): Record<string, DataArray> {
+    const out: Record<string, DataArray> = {};
+    for (const name of this.#dataVarNames) out[name] = this.#dataArray(name);
+    return out;
+  }
+
+  /** Get any variable (coordinate or data variable) as a lazy {@link DataArray}. */
+  get(name: string): DataArray {
+    if (!this.#vars.has(name)) {
+      throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
+    }
+    return this.#dataArray(name);
+  }
+
+  /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
+  isel(selection: IselSelection): Dataset {
+    const axes = new Map(this.#axesByDim);
+    for (const [dim, indexer] of Object.entries(selection)) {
+      if (!axes.has(dim)) {
+        throw new Error(`xarray-ts: Dataset has no dimension "${dim}".`);
+      }
+      axes.set(dim, applyIndexer(axes.get(dim)!, indexer, dim));
+    }
+    return new Dataset(this.#parts(), axes);
+  }
+
+  /** Label-based selection across the whole Dataset (xarray `Dataset.sel`). */
+  sel(selection: SelSelection, opts: SelOptions = {}): Dataset {
+    const positional: IselSelection = {};
+    const sliced = this.coords;
+    for (const [dim, label] of Object.entries(selection)) {
+      const coord = sliced[dim];
+      if (!coord) {
+        throw new Error(`xarray-ts: no coordinate named "${dim}" to select by label.`);
+      }
+      positional[dim] = isLabelSlice(label)
+        ? toSliceArg(lookupLabelSlice(coord, label))
+        : lookupLabel(coord, label, opts);
+    }
+    return this.isel(positional);
+  }
+
+  /** @internal Build a DataArray for a variable with the Dataset's current selection applied. */
+  #dataArray(name: string): DataArray {
+    const variable = this.#vars.get(name)!;
+    const axes = variable.dims.map((dim) => this.#axisFor(dim));
+    return new DataArray(variable, this.#rootCoords, axes);
+  }
+
+  /** @internal Current axis selection for a dimension (full if untouched/unknown). */
+  #axisFor(dim: string): AxisSel {
+    return this.#axesByDim.get(dim) ?? fullAxis(this.#dimSizes.get(dim) ?? 0);
+  }
+
+  /** @internal Reconstruct the immutable parts bag for deriving a new Dataset. */
+  #parts(): DatasetParts {
+    return {
+      vars: this.#vars,
+      coords: this.#rootCoords,
+      coordNames: this.#coordNames,
+      dataVarNames: this.#dataVarNames,
+      attrs: this.attrs,
+    };
+  }
+}
+
+function computeDimSizes(vars: Map<string, Variable>): Map<string, number> {
+  const sizes = new Map<string, number>();
+  for (const v of vars.values()) {
+    v.dims.forEach((dim, i) => {
+      const size = v.shape[i]!;
+      const existing = sizes.get(dim);
+      if (existing !== undefined && existing !== size) {
+        throw new Error(
+          `xarray-ts: inconsistent size for dimension "${dim}" (${existing} vs ${size}).`,
+        );
+      }
+      sizes.set(dim, size);
+    });
+  }
+  return sizes;
+}
