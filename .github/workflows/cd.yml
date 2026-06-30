@@ -1,0 +1,53 @@
+name: CD
+
+on: [push, pull_request]
+
+jobs:
+  npm:
+    name: build and deploy to npm
+    # Publish only from the canonical repo(s) — never forks — and only when a
+    # version tag is pushed.
+    if: >-
+      (github.repository == 'ACCESS-NRI/xarray-ts' || github.repository == 'charles-turner-1/xarray-ts')
+      && github.event_name == 'push'
+      && startsWith(github.ref, 'refs/tags')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC: npm trusted publishing (+ automatic provenance)
+      contents: read
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build distributions
+        run: npm run build
+
+      - name: Publish package to npm
+        # Trusted publishing requires a recent npm; provenance is attached
+        # automatically when publishing via OIDC.
+        run: |
+          npm install -g npm@latest
+          npm publish --access public
