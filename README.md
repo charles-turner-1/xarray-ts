@@ -158,4 +158,4 @@ ICECHUNK_TEST_URL=https://… npm test
 
 ## License
 
-MIT
+Apache 2.0, see [LICENSE](LICENSE).
