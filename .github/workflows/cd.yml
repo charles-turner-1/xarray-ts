@@ -1,24 +1,24 @@
 name: CD
 
-on: [push, pull_request]
+on:
+  release:
+    types: [published]
 
 jobs:
   npm:
-    name: build and deploy to npm
-    # Publish only from the canonical repo(s) — never forks — and only when a
-    # version tag is pushed.
-    if: >-
-      (github.repository == 'ACCESS-NRI/xarray-ts' || github.repository == 'charles-turner-1/xarray-ts')
-      && github.event_name == 'push'
-      && startsWith(github.ref, 'refs/tags')
+    name: publish to npm
+    if: github.repository == 'charles-turner-1/xarray-ts'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # OIDC: npm trusted publishing (+ automatic provenance)
-      contents: read
+      contents: write
+      id-token: write # OIDC: npm trusted publishing with provenance
 
     steps:
-      - name: Checkout source
+      - name: Checkout default branch
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -27,27 +27,75 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: npm
 
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Resolve release version
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+
+          if [ "$VERSION" = "$RELEASE_TAG" ]; then
+            echo "::error::Release tag must start with v, for example v0.1.2."
+            exit 1
+          fi
+
+          if ! node -e 'const v = process.argv[1]; const re = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/; if (!re.test(v)) process.exit(1);' "$VERSION"; then
+            echo "::error::Release tag ${RELEASE_TAG} is not a valid npm version."
+            exit 1
+          fi
+
+          if npm view "xarray-ts@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::xarray-ts@$VERSION is already published to npm."
+            exit 1
+          fi
+
+          DIST_TAG="latest"
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            DIST_TAG="next"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches package.json version
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
-            exit 1
-          fi
+      - name: Update package version
+        run: npm version "${{ steps.release.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run typecheck
+        run: npm run typecheck
 
       - name: Run tests
         run: npm test
 
+      - name: Check package surface
+        run: npm run check:package
+
       - name: Build distributions
         run: npm run build
 
-      - name: Publish package to npm
-        # Trusted publishing requires a recent npm; provenance is attached
-        # automatically when publishing via OIDC.
+      - name: Verify packed package
+        run: npm pack --dry-run
+
+      - name: Commit version bump
         run: |
-          npm install -g npm@latest
-          npm publish --access public
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "package.json and package-lock.json already match v${{ steps.release.outputs.version }}."
+          else
+            git commit -m "chore: release v${{ steps.release.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Publish package to npm
+        run: npm publish --access public --provenance --tag "${{ steps.release.outputs.dist_tag }}"

@@ -68,10 +68,7 @@ export function openDatatree(): never {
 }
 
 /** Open an icechunk repository as a readable store (requires the optional `icechunk-js` peer). */
-export async function fromIcechunk(
-  url: string,
-  options?: FromIcechunkOptions,
-): Promise<Store> {
+export async function fromIcechunk(url: string, options?: FromIcechunkOptions): Promise<Store> {
   const { IcechunkStore } = await import("icechunk-js");
   return IcechunkStore.open(url, options);
 }

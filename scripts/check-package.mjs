@@ -24,5 +24,7 @@ if (openModule.includes('import("icechunk-js").IcechunkStoreOptions')) {
 }
 
 console.log(
-  existsSync(builtEntrypoint) ? "Built package surface check passed." : "Source package surface check passed.",
+  existsSync(builtEntrypoint)
+    ? "Built package surface check passed."
+    : "Source package surface check passed.",
 );
