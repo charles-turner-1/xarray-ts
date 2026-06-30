@@ -9,13 +9,7 @@
 import * as zarr from "zarrita";
 import { applyIndexer, axisToZarr, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
-import type {
-  Coord,
-  IselSelection,
-  SelOptions,
-  SelSelection,
-  Variable,
-} from "./types.js";
+import type { Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
 
 /** Materialised slice data plus its shape/strides, as returned by `zarrita.get`. */
 export type Chunk = zarr.Chunk<zarr.DataType>;

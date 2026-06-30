@@ -45,11 +45,7 @@ const SUBMS_MS: Record<string, number> = {
 };
 
 /** Calendars whose date arithmetic matches JS `Date` (proleptic Gregorian). */
-const STANDARD_CALENDARS = new Set([
-  "standard",
-  "gregorian",
-  "proleptic_gregorian",
-]);
+const STANDARD_CALENDARS = new Set(["standard", "gregorian", "proleptic_gregorian"]);
 
 /** Parsed `"<unit> since <reference>"` units string. */
 export interface TimeUnits {
@@ -105,13 +101,9 @@ export interface DecodedTime {
  * Returns `decoded: false` (and passes values through as numbers) when the
  * units are unrecognised or the calendar is non-standard.
  */
-export function decodeTime(
-  raw: ReadonlyArray<number | bigint>,
-  attrs: Attrs,
-): DecodedTime {
-  const calendar = typeof attrs["calendar"] === "string"
-    ? attrs["calendar"].toLowerCase()
-    : "standard";
+export function decodeTime(raw: ReadonlyArray<number | bigint>, attrs: Attrs): DecodedTime {
+  const calendar =
+    typeof attrs["calendar"] === "string" ? attrs["calendar"].toLowerCase() : "standard";
   const units = typeof attrs["units"] === "string" ? attrs["units"] : "";
   const parsed = parseTimeUnits(units);
   if (!parsed || !STANDARD_CALENDARS.has(calendar)) {

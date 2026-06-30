@@ -26,10 +26,9 @@ export async function openDataset(store: Store, options: OpenOptions = {}): Prom
   let names = options.variables;
 
   if (!names) {
-    const consolidated = await zarr.withMaybeConsolidatedMetadata(
-      store as zarr.AsyncReadable,
-      { format },
-    );
+    const consolidated = await zarr.withMaybeConsolidatedMetadata(store as zarr.AsyncReadable, {
+      format,
+    });
     if ("contents" in consolidated) {
       source = consolidated;
       names = childArrayNames(consolidated.contents(), path);

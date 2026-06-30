@@ -42,9 +42,9 @@ export function classifyVariables(variables: Iterable<Variable>): {
 }
 
 /** Materialise an iterable/typed array (including zarrita's custom string/bool arrays) to a plain array. */
-function materialize(data: ArrayLike<unknown> & Iterable<unknown>): Array<
-  number | bigint | string | boolean
-> {
+function materialize(
+  data: ArrayLike<unknown> & Iterable<unknown>,
+): Array<number | bigint | string | boolean> {
   return Array.from(data) as Array<number | bigint | string | boolean>;
 }
 

@@ -21,10 +21,18 @@ export async function makeDemoStore(opts: { consolidated?: boolean } = {}): Prom
   const store: MapStore = new Map();
   await zarr.create(zarr.root(store), { attributes: { title: "demo dataset" } });
 
-  await writeArray(store, "time", "float64", [3], ["time"], {
-    units: "days since 2000-01-01",
-    calendar: "standard",
-  }, Float64Array.from([0, 1, 2]));
+  await writeArray(
+    store,
+    "time",
+    "float64",
+    [3],
+    ["time"],
+    {
+      units: "days since 2000-01-01",
+      calendar: "standard",
+    },
+    Float64Array.from([0, 1, 2]),
+  );
 
   await writeArray(store, "y", "float64", [2], ["y"], {}, Float64Array.from([10, 20]));
   await writeArray(store, "x", "float64", [4], ["x"], {}, Float64Array.from([100, 200, 300, 400]));

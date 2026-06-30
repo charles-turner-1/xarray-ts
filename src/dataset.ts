@@ -7,14 +7,7 @@
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
-import type {
-  Attrs,
-  Coord,
-  IselSelection,
-  SelOptions,
-  SelSelection,
-  Variable,
-} from "./types.js";
+import type { Attrs, Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
 
 /** Internal assembly input for a Dataset (built by `datasetFromGroup`). */
 export interface DatasetParts {
@@ -53,8 +46,7 @@ export class Dataset {
     this.#dataVarNames = parts.dataVarNames;
     this.#dimSizes = computeDimSizes(parts.vars);
     this.#axesByDim =
-      axesByDim ??
-      new Map([...this.#dimSizes].map(([dim, size]) => [dim, fullAxis(size)]));
+      axesByDim ?? new Map([...this.#dimSizes].map(([dim, size]) => [dim, fullAxis(size)]));
   }
 
   /** Mapping of dimension name to its current size. */
@@ -70,9 +62,8 @@ export class Dataset {
   get coords(): Record<string, Coord> {
     const out: Record<string, Coord> = {};
     for (const [name, coord] of this.#rootCoords) {
-      out[name] = coord.dims.length === 1
-        ? sliceCoord(coord, this.#axisFor(coord.dims[0]!))
-        : coord;
+      out[name] =
+        coord.dims.length === 1 ? sliceCoord(coord, this.#axisFor(coord.dims[0]!)) : coord;
     }
     return out;
   }

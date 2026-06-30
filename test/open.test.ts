@@ -20,11 +20,7 @@ describe("openDataset", () => {
     const time = ds.coords["time"]!;
     expect(time.isTime).toBe(true);
     expect(time.decoded).toBe(true);
-    expect(time.values).toEqual([
-      Date.UTC(2000, 0, 1),
-      Date.UTC(2000, 0, 2),
-      Date.UTC(2000, 0, 3),
-    ]);
+    expect(time.values).toEqual([Date.UTC(2000, 0, 1), Date.UTC(2000, 0, 2), Date.UTC(2000, 0, 3)]);
     expect(time.dates()?.[1]?.toISOString()).toBe("2000-01-02T00:00:00.000Z");
   });
 

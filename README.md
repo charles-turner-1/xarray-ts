@@ -1,10 +1,10 @@
 # xarray-ts
 
->[!WARNING]
+> [!WARNING]
 > This is a **work in progress**, and I've had Claude (Opus 4.8) scaffold it for me. Because of that, it might look good (IDK),
-> but it is certainly not complete or and has not been drive-stested in any meaninful sense of the word.
+> but it is certainly not complete or and has not been drive-tested in any meaningful sense of the word. Claims about functionality
+> in this README should be considered probable at best, and aspirational at worst.
 > Use at your own caution (whilst this warning is still up. I'll get rid of it once I'm confident in the codebase).
-
 
 A minimal, read-only **xarray metadata layer** for zarr v3 / icechunk in the browser.
 
@@ -39,15 +39,15 @@ import { openDataset, fromIcechunk } from "xarray-ts";
 const store = await fromIcechunk("https://bucket.s3.amazonaws.com/repo");
 const ds = await openDataset(store);
 
-ds.dims;                 // { time: 365, y: 720, x: 1440 }
-ds.attrs;                // group-level attributes
-ds.coords.time.dates();  // Date[] — CF time axis decoded for you
-ds.coords.x.values;      // number[] — eagerly loaded
+ds.dims; // { time: 365, y: 720, x: 1440 }
+ds.attrs; // group-level attributes
+ds.coords.time.dates(); // Date[] — CF time axis decoded for you
+ds.coords.x.values; // number[] — eagerly loaded
 
 // Stream just the slice you need; coordinates are metadata, data is lazy.
 const frame = await ds.get("temperature").isel({ time: 0 }).load();
-frame.data;              // a (y, x) TypedArray, fetched via zarrita
-frame.shape;             // [720, 1440]
+frame.data; // a (y, x) TypedArray, fetched via zarrita
+frame.shape; // [720, 1440]
 ```
 
 Plain zarr v3 over HTTP works too:
@@ -86,16 +86,16 @@ masking, and does not implement computation, alignment, or writing.
 ```ts
 const da = ds.get("temperature");
 
-da.isel({ time: 0 });                          // integer index drops the dim
-da.isel({ x: { start: 100, stop: 200 } });     // half-open slice keeps the dim
-da.sel({ time: new Date("2020-06-01") });      // label lookup via the coordinate
+da.isel({ time: 0 }); // integer index drops the dim
+da.isel({ x: { start: 100, stop: 200 } }); // half-open slice keeps the dim
+da.sel({ time: new Date("2020-06-01") }); // label lookup via the coordinate
 da.sel({ time: someDate }, { method: "nearest" });
-da.sel({ y: { start: -40, stop: 40 } });       // inclusive label range
+da.sel({ y: { start: -40, stop: 40 } }); // inclusive label range
 
-await da.isel({ time: 0 }).load();   // -> { data, shape, stride } (zarrita Chunk)
+await da.isel({ time: 0 }).load(); // -> { data, shape, stride } (zarrita Chunk)
 await da.isel({ time: 0 }).values(); // -> just the TypedArray (or a scalar)
 
-ds.isel({ time: 0 });                // selects across every variable -> new Dataset
+ds.isel({ time: 0 }); // selects across every variable -> new Dataset
 ```
 
 ## Enumerating variables
@@ -123,7 +123,7 @@ into this one through a clearly defined seam:
 - **`childArrayNames(contents, groupPath)`** — given a consolidated-metadata
   listing, the direct-child array names of a group.
 - **`GroupNode`** — the documented tree-node contract (`{ path, dataset,
-  children }`) the external library produces/consumes.
+children }`) the external library produces/consumes.
 - **`openDatatree()`** — a stub that throws `NotImplementedError` pointing here.
 
 ```ts
@@ -132,17 +132,17 @@ import { datasetFromGroup, type GroupNode } from "xarray-ts";
 
 ## API
 
-| Export | Description |
-| --- | --- |
-| `openDataset(store, opts?)` | Open a zarr v3 store as a `Dataset`. |
-| `openZarr` | Alias of `openDataset`. |
-| `fromIcechunk(url, opts?)` | Open an icechunk repo as a store (needs `icechunk-js`). |
-| `fromHttp(url, opts?)` | Open a plain zarr v3 store over HTTP (`FetchStore`). |
-| `Dataset` | `dims`, `coords`, `data_vars`, `attrs`, `get`, `isel`, `sel`. |
-| `DataArray` | `dims`, `shape`, `coords`, `attrs`, `dtype`, `isel`, `sel`, `load`, `values`. |
-| `Coord` | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`. |
-| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam. |
-| `openDatatree` | Stub (throws `NotImplementedError`). |
+| Export                                             | Description                                                                   |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `openDataset(store, opts?)`                        | Open a zarr v3 store as a `Dataset`.                                          |
+| `openZarr`                                         | Alias of `openDataset`.                                                       |
+| `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                       |
+| `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                          |
+| `Dataset`                                          | `dims`, `coords`, `data_vars`, `attrs`, `get`, `isel`, `sel`.                 |
+| `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `isel`, `sel`, `load`, `values`. |
+| `Coord`                                            | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                    |
+| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                        |
+| `openDatatree`                                     | Stub (throws `NotImplementedError`).                                          |
 
 ## Development
 

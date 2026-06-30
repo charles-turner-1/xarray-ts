@@ -13,8 +13,7 @@ import type { Coord, IselIndexer } from "./types.js";
 
 /** A resolved per-axis selection. */
 export type AxisSel =
-  | { kind: "int"; index: number }
-  | { kind: "slice"; start: number; step: number; length: number };
+  { kind: "int"; index: number } | { kind: "slice"; start: number; step: number; length: number };
 
 /** The identity selection for an axis of the given size (keeps the whole axis). */
 export function fullAxis(size: number): AxisSel {
