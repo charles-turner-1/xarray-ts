@@ -21,8 +21,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "keywords": [
@@ -45,7 +48,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "icechunk-js": "^0.6.0",
+    "prettier": "^3.9.4",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
