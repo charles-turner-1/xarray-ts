@@ -1,5 +1,11 @@
 # xarray-ts
 
+>[!WARNING]
+> This is a **work in progress**, and I've had Claude (Opus 4.8) scaffold it for me. Because of that, it might look good (IDK),
+> but it is certainly not complete or and has not been drive-stested in any meaninful sense of the word.
+> Use at your own caution (whilst this warning is still up. I'll get rid of it once I'm confident in the codebase).
+
+
 A minimal, read-only **xarray metadata layer** for zarr v3 / icechunk in the browser.
 
 `xarray-ts` reinterprets the zarr arrays produced by serialising an xarray
