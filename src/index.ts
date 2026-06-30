@@ -30,6 +30,7 @@ export { NotImplementedError, EnumerationError } from "./errors.js";
 export type {
   Attrs,
   Coord,
+  FromIcechunkOptions,
   IselIndexer,
   IselSelection,
   Label,
