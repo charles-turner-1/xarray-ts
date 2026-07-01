@@ -25,9 +25,11 @@ export { openDataset, openZarr, openDatatree, fromIcechunk, fromHttp } from "./o
 export { Dataset } from "./dataset.js";
 export { DataArray, type Chunk, type Scalar } from "./dataarray.js";
 export { datasetFromGroup, childArrayNames, type GroupNode } from "./group.js";
+export { isLazyCoord } from "./coords.js";
 export { NotImplementedError, EnumerationError } from "./errors.js";
 
 export type {
+  AnyCoord,
   Attrs,
   Coord,
   FromIcechunkOptions,
@@ -35,6 +37,7 @@ export type {
   IselSelection,
   Label,
   LabelSlice,
+  LazyCoord,
   OpenOptions,
   SelOptions,
   SelSelection,

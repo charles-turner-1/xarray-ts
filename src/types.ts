@@ -71,6 +71,36 @@ export interface Coord {
   dates(): Date[] | undefined;
 }
 
+/**
+ * A lazily-materialised coordinate. Auxiliary, scalar and N-d coordinates can be
+ * large (e.g. 2-D curvilinear `lat(y, x)` / `lon(y, x)` grids), so their values
+ * are *not* read at open time; only their metadata is known synchronously. Call
+ * {@link LazyCoord.load} / {@link LazyCoord.values} to fetch the values on demand.
+ *
+ * Dimension coordinates (1-D, named after their dimension) stay eager — they are
+ * small and needed by the synchronous `.sel()` path — so they surface as a
+ * materialised {@link Coord}, not a `LazyCoord`.
+ */
+export interface LazyCoord {
+  readonly name: string;
+  readonly dims: readonly string[];
+  readonly attrs: Attrs;
+  readonly dtype: zarr.DataType;
+  /** Whether this coordinate is a CF time axis — known from attrs without IO. */
+  readonly isTime: boolean;
+  /** Read and CF-decode the coordinate, returning the eager {@link Coord}. Cached. */
+  load(): Promise<Coord>;
+  /** Convenience: like {@link LazyCoord.load} but returns just the values. */
+  values(): Promise<Coord["values"]>;
+}
+
+/**
+ * A coordinate as exposed by `Dataset.coords` / `DataArray.coords`: an eager
+ * {@link Coord} for dimension coordinates, or a {@link LazyCoord} for auxiliary
+ * / scalar / N-d coordinates.
+ */
+export type AnyCoord = Coord | LazyCoord;
+
 /** A positional index along one dimension: an integer (drops the dim) or a half-open slice. */
 export type IselIndexer = number | SliceArg;
 

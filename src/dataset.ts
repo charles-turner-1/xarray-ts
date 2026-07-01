@@ -5,10 +5,19 @@
  * @module
  */
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
+import { isLazyCoord, makeLazyCoord } from "./coords.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDimNames, type InspectFn, type InspectOptions } from "./repr.js";
-import type { Attrs, Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
+import type {
+  AnyCoord,
+  Attrs,
+  Coord,
+  IselSelection,
+  SelOptions,
+  SelSelection,
+  Variable,
+} from "./types.js";
 
 /** Internal assembly input for a Dataset (built by `datasetFromGroup`). */
 export interface DatasetParts {
@@ -59,12 +68,18 @@ export class Dataset {
     return out;
   }
 
-  /** Coordinates, sliced to the current selection (presentational). */
-  get coords(): Record<string, Coord> {
-    const out: Record<string, Coord> = {};
-    for (const [name, coord] of this.#rootCoords) {
-      out[name] =
-        coord.dims.length === 1 ? sliceCoord(coord, this.#axisFor(coord.dims[0]!)) : coord;
+  /**
+   * Coordinates for the current selection (presentational). Dimension
+   * coordinates are eager {@link Coord}s, sliced to the selection; auxiliary /
+   * scalar / N-d coordinates are lazy {@link LazyCoord}s (values on `await`).
+   */
+  get coords(): Record<string, AnyCoord> {
+    const out: Record<string, AnyCoord> = {};
+    for (const name of this.#coordNames) {
+      const eager = this.#rootCoords.get(name);
+      out[name] = eager
+        ? sliceCoord(eager, this.#axisFor(eager.dims[0]!))
+        : makeLazyCoord(this.#vars.get(name)!);
     }
     return out;
   }
@@ -170,6 +185,12 @@ export class Dataset {
       const coord = sliced[dim];
       if (!coord) {
         throw new Error(`xarray-ts: no coordinate named "${dim}" to select by label.`);
+      }
+      if (isLazyCoord(coord)) {
+        throw new Error(
+          `xarray-ts: cannot select by "${dim}" — label selection requires an eager ` +
+            `dimension coordinate (auxiliary coordinates are lazy; use \`isel\` instead).`,
+        );
       }
       positional[dim] = isLabelSlice(label)
         ? toSliceArg(lookupLabelSlice(coord, label))

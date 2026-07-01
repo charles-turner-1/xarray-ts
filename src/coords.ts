@@ -13,7 +13,45 @@
  */
 import * as zarr from "zarrita";
 import { decodeTime, isTimeUnits } from "./decode/time.js";
-import type { Coord, Variable } from "./types.js";
+import type { AnyCoord, Coord, LazyCoord, Variable } from "./types.js";
+
+/**
+ * Whether a variable is a **dimension coordinate** (1-D and named after its only
+ * dimension). These are eagerly materialised at open — they are small and drive
+ * the synchronous `.sel()` path; every other coordinate is loaded lazily.
+ */
+export function isDimensionCoord(v: Variable): boolean {
+  return v.dims.length === 1 && v.dims[0] === v.name;
+}
+
+/**
+ * Wrap a coordinate variable as a {@link LazyCoord}: metadata is available
+ * synchronously; values are read (and CF-decoded) on the first `load()`/`values()`
+ * call and cached thereafter. Used for auxiliary / scalar / N-d coordinates that
+ * are not eagerly materialised at open.
+ */
+/**
+ * Narrow a coordinate from `Dataset.coords` / `DataArray.coords` to a lazy one.
+ * An eager {@link Coord} (a dimension coordinate) has synchronous `.values` and
+ * `.dates()`; a {@link LazyCoord} exposes `.load()` and must be awaited.
+ */
+export function isLazyCoord(coord: AnyCoord): coord is LazyCoord {
+  return "load" in coord;
+}
+
+export function makeLazyCoord(v: Variable): LazyCoord {
+  let loaded: Promise<Coord> | undefined;
+  const load = (): Promise<Coord> => (loaded ??= loadCoord(v));
+  return {
+    name: v.name,
+    dims: v.dims,
+    attrs: v.attrs,
+    dtype: v.dtype,
+    isTime: isTimeUnits(v.attrs),
+    load,
+    values: () => load().then((coord) => coord.values),
+  };
+}
 
 /** Split variables into coordinate names and data-variable names. */
 export function classifyVariables(variables: Iterable<Variable>): {
