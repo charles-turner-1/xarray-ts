@@ -20,7 +20,9 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
+    "check:package": "node ./scripts/check-package.mjs",
     "lint": "prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",

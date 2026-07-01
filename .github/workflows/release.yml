@@ -1,0 +1,63 @@
+name: Release
+
+# Manually triggered from the Actions tab. Bumps the version, commits, and pushes
+# a vX.Y.Z tag. Pushing that tag triggers the CD workflow, which publishes to npm.
+#
+# The tag is pushed with a fine-grained PAT (secret RELEASE_TOKEN) rather than the
+# default GITHUB_TOKEN: pushes made with the default token do NOT trigger other
+# workflows, so CD would never fire.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+jobs:
+  tag:
+    name: bump version and push tag
+    if: github.repository == 'charles-turner-1/xarray-ts'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }} # PAT so the tag push triggers CD
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fail before creating the tag, so a broken build never leaves an orphan tag.
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version, commit, and tag
+        # npm version bumps package.json + package-lock.json, commits, and creates
+        # tag vX.Y.Z on that commit — all locally.
+        run: npm version "${{ inputs.bump }}" -m "Release v%s"
+
+      - name: Push commit and tag
+        run: git push --follow-tags origin main

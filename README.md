@@ -151,6 +151,7 @@ npm test            # run the hermetic in-memory unit tests
 npm run test:watch  # watch mode
 npm run typecheck   # tsc --noEmit (strict)
 npm run build       # emit ESM + .d.ts to dist/
+npm run check:package # assert the public package surface stays self-contained
 
 # opt-in integration test against a real icechunk repo:
 ICECHUNK_TEST_URL=https://… npm test

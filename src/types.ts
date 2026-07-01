@@ -112,3 +112,11 @@ export interface OpenOptions {
   /** Consolidated-metadata format(s) to try. Forwarded to zarrita. Defaults to `"v3"`. */
   consolidated?: zarr.ConsolidatedFormat | zarr.ConsolidatedFormat[];
 }
+
+/**
+ * Forwarded options for `fromIcechunk`.
+ *
+ * Kept structurally typed so the root package declarations do not require the
+ * optional `icechunk-js` peer to be installed just to resolve `xarray-ts`.
+ */
+export type FromIcechunkOptions = Record<string, unknown>;

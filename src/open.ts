@@ -7,7 +7,7 @@ import * as zarr from "zarrita";
 import type { Dataset } from "./dataset.js";
 import { EnumerationError, NotImplementedError } from "./errors.js";
 import { childArrayNames, datasetFromGroup } from "./group.js";
-import type { OpenOptions, Store } from "./types.js";
+import type { FromIcechunkOptions, OpenOptions, Store } from "./types.js";
 
 /**
  * Open a zarr **v3** store (icechunk-js, a `FetchStore`, an in-memory `Map`, ...)
@@ -68,10 +68,7 @@ export function openDatatree(): never {
 }
 
 /** Open an icechunk repository as a readable store (requires the optional `icechunk-js` peer). */
-export async function fromIcechunk(
-  url: string,
-  options?: import("icechunk-js").IcechunkStoreOptions,
-): Promise<Store> {
+export async function fromIcechunk(url: string, options?: FromIcechunkOptions): Promise<Store> {
   const { IcechunkStore } = await import("icechunk-js");
   return IcechunkStore.open(url, options);
 }
