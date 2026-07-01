@@ -5,7 +5,7 @@
  * @module
  */
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
-import { isLazyCoord, makeLazyCoord } from "./coords.js";
+import { isDimensionCoord, isLazyCoord, makeLazyCoord } from "./coords.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDimNames, type InspectFn, type InspectOptions } from "./repr.js";
@@ -165,6 +165,65 @@ export class Dataset {
     return this.#subset(keep);
   }
 
+  /**
+   * Promote data variables to coordinates (xarray `Dataset.set_coords`).
+   *
+   * Pure metadata reclassification — no data is read. A promoted variable
+   * becomes an auxiliary (lazy) coordinate; its values load on demand via
+   * `coords[name].load()`. Idempotent (promoting an existing coordinate is a
+   * no-op). Note it never eagerly materialises: if you promote a
+   * dimension-shaped variable and need it loaded for `.sel()`, that is the
+   * eager-open path.
+   */
+  setCoords(names: string | Iterable<string>): Dataset {
+    const promote = this.#validatedNames(typeof names === "string" ? [names] : names);
+    const coordNames = new Set(this.#coordNames);
+    const dataVarNames = new Set(this.#dataVarNames);
+    for (const name of promote) {
+      coordNames.add(name);
+      dataVarNames.delete(name);
+    }
+    return this.#reclassified(coordNames, dataVarNames);
+  }
+
+  /**
+   * Reset coordinates back to data variables (xarray `Dataset.reset_coords`).
+   *
+   * With no argument, resets every non-dimension coordinate. Dimension (index)
+   * coordinates cannot be reset — pass `renameDims`/`isel` semantics instead.
+   * With `{ drop: true }`, the coordinates are removed entirely rather than
+   * demoted to data variables.
+   */
+  resetCoords(names?: string | Iterable<string>, opts: { drop?: boolean } = {}): Dataset {
+    const dimCoords = this.#dimensionCoordNames();
+    let reset: Set<string>;
+    if (names === undefined) {
+      reset = new Set([...this.#coordNames].filter((name) => !dimCoords.has(name)));
+    } else {
+      reset = this.#validatedNames(typeof names === "string" ? [names] : names);
+      const bad = [...reset].filter((name) => dimCoords.has(name));
+      if (bad.length) {
+        throw new Error(
+          `xarray-ts: cannot reset index (dimension) coordinates: ${JSON.stringify(bad)}.`,
+        );
+      }
+    }
+
+    const coordNames = new Set(this.#coordNames);
+    const dataVarNames = new Set(this.#dataVarNames);
+    const vars = opts.drop ? new Map(this.#vars) : this.#vars;
+    for (const name of reset) {
+      coordNames.delete(name);
+      if (opts.drop) {
+        vars.delete(name);
+        dataVarNames.delete(name);
+      } else {
+        dataVarNames.add(name);
+      }
+    }
+    return this.#reclassified(coordNames, dataVarNames, vars);
+  }
+
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
     const axes = new Map(this.#axesByDim);
@@ -311,6 +370,38 @@ export class Dataset {
       },
       axesByDim,
     );
+  }
+
+  /** @internal Coordinate names that are dimension (index) coordinates. */
+  #dimensionCoordNames(): Set<string> {
+    const out = new Set<string>();
+    for (const name of this.#coordNames) {
+      if (isDimensionCoord(this.#vars.get(name)!)) out.add(name);
+    }
+    return out;
+  }
+
+  /**
+   * @internal Rebuild the Dataset with new coord/data-var classification (and an
+   * optionally reduced `vars`), preserving the current selection. Keeps eager
+   * dimension coords only while their variable survives and stays a coordinate;
+   * auxiliary coords are reconstructed lazily by the `coords` getter.
+   */
+  #reclassified(
+    coordNames: Set<string>,
+    dataVarNames: Set<string>,
+    vars: Map<string, Variable> = this.#vars,
+  ): Dataset {
+    const coords = new Map<string, Coord>();
+    for (const [name, coord] of this.#rootCoords) {
+      if (vars.has(name) && coordNames.has(name)) coords.set(name, coord);
+    }
+    const keepDims = new Set<string>();
+    for (const variable of vars.values()) {
+      for (const dim of variable.dims) keepDims.add(dim);
+    }
+    const axesByDim = new Map([...this.#axesByDim].filter(([dim]) => keepDims.has(dim)));
+    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
   }
 
   #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
