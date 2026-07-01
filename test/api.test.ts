@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, openDataset } from "../src/index.js";
-import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
+import { makeAuxCoordStore, makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("store openers", () => {
   it("fromHttp returns a zarrita FetchStore", () => {
@@ -39,12 +39,14 @@ describe("rename-style metadata operations", () => {
     expect(Object.keys(renamed.coords).sort()).toEqual(["time", "x", "y"]);
   });
 
-  it("renameVars updates coordinate references in attributes", async () => {
+  it("renameVars renames a coordinate and keeps it out of user-visible attrs", async () => {
     const ds = await openDataset(await makeScalarCoordStore());
     const renamed = ds.renameVars({ height: "z" });
 
     expect(Object.keys(renamed.coords).sort()).toEqual(["time", "z"]);
-    expect(renamed.get("tasmax").attrs["coordinates"]).toBe("z");
+    expect(Object.keys(renamed.data_vars)).toEqual(["tasmax"]);
+    // `coordinates` is decode-time encoding, never surfaced in attrs (xarray parity).
+    expect(renamed.get("tasmax").attrs).not.toHaveProperty("coordinates");
   });
 
   it("renameDims renames dimensions and matching dimension coordinates", async () => {
@@ -57,13 +59,46 @@ describe("rename-style metadata operations", () => {
     expect(renamed.sel({ lon: 200 }).dims).toEqual({ time: 3, lat: 2 });
   });
 
-  it("DataArray.rename returns a renamed lazy view", async () => {
+  it("renameDims renames a dimension that has no coordinate variable", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store: Map<string, Uint8Array> = new Map();
+    await zarr.create(zarr.root(store), {});
+    const arr = await zarr.create(zarr.root(store).resolve("raw"), {
+      shape: [2, 3],
+      chunkShape: [2, 3],
+      dtype: "int16",
+    });
+    const stride = zarr._zarrita_internal_getStrides([2, 3], "C");
+    await zarr.set(arr, null, { data: Int16Array.from([0, 1, 2, 3, 4, 5]), shape: [2, 3], stride });
+
+    const ds = await openDataset(store, { variables: ["raw"] });
+    const renamed = ds.renameDims({ raw_dim_0: "a" });
+
+    expect(renamed.dims).toEqual({ a: 2, raw_dim_1: 3 });
+    expect(renamed.get("raw").dims).toEqual(["a", "raw_dim_1"]);
+  });
+
+  it("DataArray.rename returns a renamed lazy view preserving coords and attrs", async () => {
     const ds = await openDataset(await makeDemoStore());
-    const renamed = ds.get("temperature").rename("tas");
+    const da = ds.get("temperature");
+    const renamed = da.rename("tas");
 
     expect(renamed.name).toBe("tas");
     expect(renamed.dims).toEqual(["time", "y", "x"]);
+    expect(renamed.attrs).toEqual(da.attrs);
+    expect(Object.keys(renamed.coords).sort()).toEqual(Object.keys(da.coords).sort());
     expect(await renamed.isel({ time: 0 }).values()).toBeInstanceOf(Float32Array);
+  });
+
+  it("renameVars/renameDims read no chunks", async () => {
+    const store = await makeDemoStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    ds.renameVars({ temperature: "tas" });
+    ds.renameDims({ x: "lon" });
+    expect(readSpy).not.toHaveBeenCalled();
   });
 
   it("throws on bad rename targets", async () => {
@@ -71,6 +106,120 @@ describe("rename-style metadata operations", () => {
     expect(() => ds.renameVars({ salinity: "salt" })).toThrow(/no variable named "salinity"/);
     expect(() => ds.renameVars({ temperature: "x" })).toThrow(/existing variable "x"/);
     expect(() => ds.renameDims({ member: "ensemble" })).toThrow(/no dimension "member"/);
+  });
+});
+
+describe("dataset variable subset operations", () => {
+  it("dropVars removes named data variables but keeps coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["temperature"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual([]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["time", "x", "y"]);
+    expect(sub.dims).toEqual({ time: 3, y: 2, x: 4 });
+  });
+
+  it("pickVars keeps a data variable plus its coordinate closure", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.pickVars(["temperature"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["temperature"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["time", "x", "y"]);
+  });
+
+  it("pickVars keeps auxiliary scalar coordinates referenced by kept variables", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const sub = ds.pickVars(["tasmax"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["tasmax"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["height", "time"]);
+  });
+
+  it("pickVars keeps N-d aux coordinates on retained dims even when the picked var doesn't name them", async () => {
+    // `pr` has no `coordinates` attr, but lat/lon are defined on (y, x) which pr
+    // spans, so xarray keeps them. (The old attr-driven closure dropped them.)
+    const ds = await openDataset(await makeAuxCoordStore());
+    const sub = ds.pickVars(["pr"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["pr"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["lat", "lon", "x", "y"]);
+    expect(sub.dims).toEqual({ y: 2, x: 2 });
+  });
+
+  it("keeps the CF `coordinates` key out of user-visible attrs (xarray parity)", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const attrs = ds.get("tasmax").attrs;
+
+    expect(attrs).not.toHaveProperty("coordinates");
+    expect(attrs["units"]).toBe("K");
+  });
+
+  it("dropVars removes an aux coordinate with no dangling reference left behind", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const sub = ds.dropVars(["height"]);
+
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.get("tasmax").attrs).not.toHaveProperty("coordinates");
+  });
+
+  it("pickVars drops dimensions no longer spanned by any kept variable", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.pickVars(["time"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual([]);
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.dims).toEqual({ time: 3 });
+  });
+
+  it("dropVars drops dimensions whose variables are all removed", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["temperature", "y", "x"]);
+
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.dims).toEqual({ time: 3 });
+  });
+
+  it("dropVars can drop a dimension coordinate while keeping the dimension", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["time"]);
+
+    // the dimension survives (temperature still spans it) but its labels are gone
+    expect(sub.dims).toEqual({ time: 3, y: 2, x: 4 });
+    expect(Object.keys(sub.coords).sort()).toEqual(["x", "y"]);
+    expect(Object.keys(sub.data_vars)).toEqual(["temperature"]);
+  });
+
+  it("pickVars preserves lazy data that still loads correctly", async () => {
+    const store = await makeDemoStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    const sub = ds.pickVars(["temperature"]);
+    expect(readSpy).not.toHaveBeenCalled(); // subsetting reads no chunks
+
+    const values = await sub.get("temperature").values();
+    expect(Array.from(values as Float32Array)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+  });
+
+  it("returns an empty dataset for pickVars([]) and an unchanged one for dropVars([])", async () => {
+    const ds = await openDataset(await makeDemoStore());
+
+    const empty = ds.pickVars([]);
+    expect(Object.keys(empty.data_vars)).toEqual([]);
+    expect(Object.keys(empty.coords)).toEqual([]);
+    expect(empty.dims).toEqual({});
+
+    const same = ds.dropVars([]);
+    expect(Object.keys(same.data_vars)).toEqual(["temperature"]);
+    expect(Object.keys(same.coords).sort()).toEqual(["time", "x", "y"]);
+    expect(same.dims).toEqual({ time: 3, y: 2, x: 4 });
+  });
+
+  it("throws on unknown variable names", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.dropVars(["salinity"])).toThrow(/no variable named "salinity"/);
+    expect(() => ds.pickVars(["salinity"])).toThrow(/no variable named "salinity"/);
   });
 });
 

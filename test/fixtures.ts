@@ -78,6 +78,54 @@ export async function makeScalarCoordStore(): Promise<MapStore> {
   return store;
 }
 
+/**
+ * A store with 2-D auxiliary coordinates (CF `lat(y, x)`, `lon(y, x)`) referenced
+ * by one data variable's `coordinates` attribute, plus a second data variable on
+ * the same grid that does *not* name them — exercising xarray's rule that a coord
+ * is kept when its dims are a subset of the picked variable's dims:
+ *   dims      y=2, x=2
+ *   coords    y, x, lat(y, x), lon(y, x)
+ *   data_vars temp(y, x) with `coordinates: "lat lon"`, pr(y, x) with no attr
+ */
+export async function makeAuxCoordStore(): Promise<MapStore> {
+  const store: MapStore = new Map();
+  await zarr.create(zarr.root(store), {});
+
+  await writeArray(store, "y", "float64", [2], ["y"], {}, Float64Array.from([10, 20]));
+  await writeArray(store, "x", "float64", [2], ["x"], {}, Float64Array.from([100, 200]));
+  await writeArray(
+    store,
+    "lat",
+    "float64",
+    [2, 2],
+    ["y", "x"],
+    {},
+    Float64Array.from([0, 1, 2, 3]),
+  );
+  await writeArray(
+    store,
+    "lon",
+    "float64",
+    [2, 2],
+    ["y", "x"],
+    {},
+    Float64Array.from([4, 5, 6, 7]),
+  );
+  await writeArray(
+    store,
+    "temp",
+    "float32",
+    [2, 2],
+    ["y", "x"],
+    { coordinates: "lat lon" },
+    Float32Array.from([0, 1, 2, 3]),
+  );
+  await writeArray(store, "pr", "float32", [2, 2], ["y", "x"], {}, Float32Array.from([0, 1, 2, 3]));
+
+  consolidate(store);
+  return store;
+}
+
 async function writeScalar<D extends zarr.DataType>(
   store: MapStore,
   name: string,

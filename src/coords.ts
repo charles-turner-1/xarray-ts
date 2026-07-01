@@ -25,7 +25,7 @@ export function classifyVariables(variables: Iterable<Variable>): {
   const referenced = new Set<string>();
   for (const v of vars) {
     for (const d of v.dims) dimNames.add(d);
-    const coordsAttr = v.attrs["coordinates"];
+    const coordsAttr = v.encoding["coordinates"];
     if (typeof coordsAttr === "string") {
       for (const name of coordsAttr.split(/\s+/).filter(Boolean)) referenced.add(name);
     }

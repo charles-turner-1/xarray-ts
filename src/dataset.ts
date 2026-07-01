@@ -104,11 +104,50 @@ export class Dataset {
    * rename that coordinate variable too so `.sel()` and `ds.coords` stay aligned.
    */
   renameDims(names: Record<string, string>): Dataset {
-    const withDimCoords = { ...names };
+    const varRenames: Record<string, string> = {};
     for (const [oldDim, newDim] of Object.entries(names)) {
-      if (this.#coordNames.has(oldDim)) withDimCoords[oldDim] = newDim;
+      if (this.#coordNames.has(oldDim)) varRenames[oldDim] = newDim;
     }
-    return this.#renamed(withDimCoords, names);
+    return this.#renamed(varRenames, names);
+  }
+
+  /**
+   * Drop variables/coordinates by name, returning a new Dataset with the
+   * remaining structure unchanged and data variables still lazy.
+   */
+  dropVars(names: Iterable<string>): Dataset {
+    const drop = this.#validatedNames(names);
+    const keep = new Set<string>();
+    for (const name of this.#vars.keys()) {
+      if (!drop.has(name)) keep.add(name);
+    }
+    return this.#subset(keep);
+  }
+
+  /**
+   * Keep only the named variables, plus every coordinate whose dimensions are a
+   * subset of the picked variables' dimensions (xarray `Dataset[[names]]`).
+   *
+   * This keeps dimension coordinates for retained dims, scalar coordinates
+   * (empty dims, a subset of anything), and N-d auxiliary coordinates defined
+   * on retained dims — while never resurrecting a dimension that was dropped.
+   */
+  pickVars(names: Iterable<string>): Dataset {
+    const keep = this.#validatedNames(names);
+
+    const neededDims = new Set<string>();
+    for (const name of keep) {
+      for (const dim of this.#vars.get(name)!.dims) neededDims.add(dim);
+    }
+
+    for (const name of this.#coordNames) {
+      if (keep.has(name)) continue;
+      if (this.#vars.get(name)!.dims.every((dim) => neededDims.has(dim))) {
+        keep.add(name);
+      }
+    }
+
+    return this.#subset(keep);
   }
 
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
@@ -204,6 +243,55 @@ export class Dataset {
     };
   }
 
+  #validatedNames(names: Iterable<string>): Set<string> {
+    const out = new Set<string>();
+    for (const name of names) {
+      if (!this.#vars.has(name)) {
+        throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
+      }
+      out.add(name);
+    }
+    return out;
+  }
+
+  #subset(keep: Set<string>): Dataset {
+    const vars = new Map<string, Variable>();
+    const coords = new Map<string, Coord>();
+    const coordNames = new Set<string>();
+    const dataVarNames = new Set<string>();
+
+    for (const [name, variable] of this.#vars) {
+      if (!keep.has(name)) continue;
+      vars.set(name, variable);
+      if (this.#coordNames.has(name)) {
+        coordNames.add(name);
+        const coord = this.#rootCoords.get(name);
+        if (coord) coords.set(name, coord);
+      } else if (this.#dataVarNames.has(name)) {
+        dataVarNames.add(name);
+      }
+    }
+
+    // Only retain axis state for dimensions still spanned by a kept variable;
+    // otherwise dims from dropped variables would linger in `dims`/`coords`.
+    const keepDims = new Set<string>();
+    for (const variable of vars.values()) {
+      for (const dim of variable.dims) keepDims.add(dim);
+    }
+    const axesByDim = new Map([...this.#axesByDim].filter(([dim]) => keepDims.has(dim)));
+
+    return new Dataset(
+      {
+        vars,
+        coords,
+        coordNames,
+        dataVarNames,
+        attrs: this.attrs,
+      },
+      axesByDim,
+    );
+  }
+
   #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
     for (const [oldDim, newDim] of Object.entries(dimRenames)) {
       if (!this.#dimSizes.has(oldDim)) {
@@ -231,8 +319,7 @@ export class Dataset {
 
     for (const [oldName, variable] of this.#vars) {
       const newName = varRenames[oldName] ?? oldName;
-      const renamed = renameVariable(variable, newName, varRenames, dimRenames);
-      vars.set(newName, renamed);
+      vars.set(newName, renameVariable(variable, newName, dimRenames));
       if (this.#coordNames.has(oldName)) {
         coordNames.add(newName);
       } else if (this.#dataVarNames.has(oldName)) {
@@ -257,14 +344,12 @@ export class Dataset {
 function renameVariable(
   variable: Variable,
   name: string,
-  varRenames: Record<string, string>,
   dimRenames: Record<string, string>,
 ): Variable {
   return {
     ...variable,
     name,
     dims: variable.dims.map((dim) => dimRenames[dim] ?? dim),
-    attrs: renameCoordReferences(variable.attrs, varRenames),
   };
 }
 
@@ -279,17 +364,6 @@ function renameCoord(coord: Coord, name: string, dimRenames: Record<string, stri
       return (values as number[]).map((ms) => new Date(ms));
     },
   };
-}
-
-function renameCoordReferences(attrs: Attrs, varRenames: Record<string, string>): Attrs {
-  const coordsAttr = attrs["coordinates"];
-  if (typeof coordsAttr !== "string") return attrs;
-  const renamed = coordsAttr
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((name) => varRenames[name] ?? name)
-    .join(" ");
-  return { ...attrs, coordinates: renamed };
 }
 
 function computeDimSizes(vars: Map<string, Variable>): Map<string, number> {
