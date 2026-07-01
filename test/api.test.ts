@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, openDataset } from "../src/index.js";
-import { makeDemoStore } from "./fixtures.js";
+import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("store openers", () => {
   it("fromHttp returns a zarrita FetchStore", () => {
@@ -25,6 +25,52 @@ describe("label-range selection", () => {
     const sub = ds.sel({ x: { start: 100, stop: 200 } });
     expect(sub.dims).toEqual({ time: 3, y: 2, x: 2 });
     expect(sub.coords["x"]!.values).toEqual([100, 200]);
+  });
+});
+
+describe("rename-style metadata operations", () => {
+  it("renameVars renames a data variable without touching coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.renameVars({ temperature: "tas" });
+
+    expect(Object.keys(renamed.data_vars)).toEqual(["tas"]);
+    expect(() => renamed.get("temperature")).toThrow(/no variable named "temperature"/);
+    expect(renamed.get("tas").dims).toEqual(["time", "y", "x"]);
+    expect(Object.keys(renamed.coords).sort()).toEqual(["time", "x", "y"]);
+  });
+
+  it("renameVars updates coordinate references in attributes", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const renamed = ds.renameVars({ height: "z" });
+
+    expect(Object.keys(renamed.coords).sort()).toEqual(["time", "z"]);
+    expect(renamed.get("tasmax").attrs["coordinates"]).toBe("z");
+  });
+
+  it("renameDims renames dimensions and matching dimension coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.renameDims({ x: "lon", y: "lat" });
+
+    expect(renamed.dims).toEqual({ time: 3, lat: 2, lon: 4 });
+    expect(Object.keys(renamed.coords).sort()).toEqual(["lat", "lon", "time"]);
+    expect(renamed.get("temperature").dims).toEqual(["time", "lat", "lon"]);
+    expect(renamed.sel({ lon: 200 }).dims).toEqual({ time: 3, lat: 2 });
+  });
+
+  it("DataArray.rename returns a renamed lazy view", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.get("temperature").rename("tas");
+
+    expect(renamed.name).toBe("tas");
+    expect(renamed.dims).toEqual(["time", "y", "x"]);
+    expect(await renamed.isel({ time: 0 }).values()).toBeInstanceOf(Float32Array);
+  });
+
+  it("throws on bad rename targets", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.renameVars({ salinity: "salt" })).toThrow(/no variable named "salinity"/);
+    expect(() => ds.renameVars({ temperature: "x" })).toThrow(/existing variable "x"/);
+    expect(() => ds.renameDims({ member: "ensemble" })).toThrow(/no dimension "member"/);
   });
 });
 

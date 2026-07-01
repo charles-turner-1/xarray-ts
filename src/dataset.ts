@@ -94,6 +94,23 @@ export class Dataset {
     return this.#dataArray(name);
   }
 
+  /** Rename variables/coordinates without touching underlying data values. */
+  renameVars(names: Record<string, string>): Dataset {
+    return this.#renamed(names, {});
+  }
+
+  /**
+   * Rename dimensions; if a dimension coordinate shares the old dimension name,
+   * rename that coordinate variable too so `.sel()` and `ds.coords` stay aligned.
+   */
+  renameDims(names: Record<string, string>): Dataset {
+    const withDimCoords = { ...names };
+    for (const [oldDim, newDim] of Object.entries(names)) {
+      if (this.#coordNames.has(oldDim)) withDimCoords[oldDim] = newDim;
+    }
+    return this.#renamed(withDimCoords, names);
+  }
+
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
     const axes = new Map(this.#axesByDim);
@@ -186,6 +203,91 @@ export class Dataset {
       attrs: this.attrs,
     };
   }
+
+  #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
+    for (const [oldDim, newDim] of Object.entries(dimRenames)) {
+      if (!this.#dimSizes.has(oldDim)) {
+        throw new Error(`xarray-ts: Dataset has no dimension "${oldDim}".`);
+      }
+      if (oldDim !== newDim && this.#dimSizes.has(newDim) && !Object.hasOwn(dimRenames, newDim)) {
+        throw new Error(`xarray-ts: cannot rename dimension "${oldDim}" to existing dimension "${newDim}".`);
+      }
+    }
+    for (const [oldName, newName] of Object.entries(varRenames)) {
+      if (!this.#vars.has(oldName)) {
+        throw new Error(`xarray-ts: no variable named "${oldName}" in Dataset.`);
+      }
+      if (oldName !== newName && this.#vars.has(newName) && !Object.hasOwn(varRenames, newName)) {
+        throw new Error(`xarray-ts: cannot rename "${oldName}" to existing variable "${newName}".`);
+      }
+    }
+
+    const vars = new Map<string, Variable>();
+    const coords = new Map<string, Coord>();
+    const coordNames = new Set<string>();
+    const dataVarNames = new Set<string>();
+
+    for (const [oldName, variable] of this.#vars) {
+      const newName = varRenames[oldName] ?? oldName;
+      const renamed = renameVariable(variable, newName, varRenames, dimRenames);
+      vars.set(newName, renamed);
+      if (this.#coordNames.has(oldName)) {
+        coordNames.add(newName);
+      } else if (this.#dataVarNames.has(oldName)) {
+        dataVarNames.add(newName);
+      }
+    }
+
+    for (const [oldName, coord] of this.#rootCoords) {
+      const newName = varRenames[oldName] ?? oldName;
+      coords.set(newName, renameCoord(coord, newName, dimRenames));
+    }
+
+    const axesByDim = new Map<string, AxisSel>();
+    for (const [oldDim, axis] of this.#axesByDim) {
+      axesByDim.set(dimRenames[oldDim] ?? oldDim, axis);
+    }
+
+    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+  }
+}
+
+function renameVariable(
+  variable: Variable,
+  name: string,
+  varRenames: Record<string, string>,
+  dimRenames: Record<string, string>,
+): Variable {
+  return {
+    ...variable,
+    name,
+    dims: variable.dims.map((dim) => dimRenames[dim] ?? dim),
+    attrs: renameCoordReferences(variable.attrs, varRenames),
+  };
+}
+
+function renameCoord(coord: Coord, name: string, dimRenames: Record<string, string>): Coord {
+  const values = coord.values;
+  return {
+    ...coord,
+    name,
+    dims: coord.dims.map((dim) => dimRenames[dim] ?? dim),
+    dates(): Date[] | undefined {
+      if (!coord.isTime || !coord.decoded) return undefined;
+      return (values as number[]).map((ms) => new Date(ms));
+    },
+  };
+}
+
+function renameCoordReferences(attrs: Attrs, varRenames: Record<string, string>): Attrs {
+  const coordsAttr = attrs["coordinates"];
+  if (typeof coordsAttr !== "string") return attrs;
+  const renamed = coordsAttr
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((name) => varRenames[name] ?? name)
+    .join(" ");
+  return { ...attrs, coordinates: renamed };
 }
 
 function computeDimSizes(vars: Map<string, Variable>): Map<string, number> {
