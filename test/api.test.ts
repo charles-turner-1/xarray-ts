@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, openDataset } from "../src/index.js";
-import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
+import { makeAuxCoordStore, makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("store openers", () => {
   it("fromHttp returns a zarrita FetchStore", () => {
@@ -52,6 +52,33 @@ describe("dataset variable subset operations", () => {
 
     expect(Object.keys(sub.data_vars)).toEqual(["tasmax"]);
     expect(Object.keys(sub.coords).sort()).toEqual(["height", "time"]);
+  });
+
+  it("pickVars keeps N-d aux coordinates on retained dims even when the picked var doesn't name them", async () => {
+    // `pr` has no `coordinates` attr, but lat/lon are defined on (y, x) which pr
+    // spans, so xarray keeps them. (The old attr-driven closure dropped them.)
+    const ds = await openDataset(await makeAuxCoordStore());
+    const sub = ds.pickVars(["pr"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["pr"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["lat", "lon", "x", "y"]);
+    expect(sub.dims).toEqual({ y: 2, x: 2 });
+  });
+
+  it("keeps the CF `coordinates` key out of user-visible attrs (xarray parity)", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const attrs = ds.get("tasmax").attrs;
+
+    expect(attrs).not.toHaveProperty("coordinates");
+    expect(attrs["units"]).toBe("K");
+  });
+
+  it("dropVars removes an aux coordinate with no dangling reference left behind", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const sub = ds.dropVars(["height"]);
+
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.get("tasmax").attrs).not.toHaveProperty("coordinates");
   });
 
   it("pickVars drops dimensions no longer spanned by any kept variable", async () => {

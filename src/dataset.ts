@@ -108,36 +108,25 @@ export class Dataset {
   }
 
   /**
-   * Keep only the named variables, plus any coordinate closure needed to make
-   * the remaining Dataset structurally useful.
+   * Keep only the named variables, plus every coordinate whose dimensions are a
+   * subset of the picked variables' dimensions (xarray `Dataset[[names]]`).
+   *
+   * This keeps dimension coordinates for retained dims, scalar coordinates
+   * (empty dims, a subset of anything), and N-d auxiliary coordinates defined
+   * on retained dims — while never resurrecting a dimension that was dropped.
    */
   pickVars(names: Iterable<string>): Dataset {
     const keep = this.#validatedNames(names);
 
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const name of [...keep]) {
-        const variable = this.#vars.get(name)!;
-        for (const dim of variable.dims) {
-          if (this.#coordNames.has(dim) && this.#vars.has(dim) && !keep.has(dim)) {
-            keep.add(dim);
-            changed = true;
-          }
-        }
-        const coordsAttr = variable.attrs["coordinates"];
-        if (typeof coordsAttr === "string") {
-          for (const coordName of coordsAttr.split(/\s+/).filter(Boolean)) {
-            if (
-              this.#coordNames.has(coordName) &&
-              this.#vars.has(coordName) &&
-              !keep.has(coordName)
-            ) {
-              keep.add(coordName);
-              changed = true;
-            }
-          }
-        }
+    const neededDims = new Set<string>();
+    for (const name of keep) {
+      for (const dim of this.#vars.get(name)!.dims) neededDims.add(dim);
+    }
+
+    for (const name of this.#coordNames) {
+      if (keep.has(name)) continue;
+      if (this.#vars.get(name)!.dims.every((dim) => neededDims.has(dim))) {
+        keep.add(name);
       }
     }
 
