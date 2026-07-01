@@ -54,6 +54,60 @@ describe("dataset variable subset operations", () => {
     expect(Object.keys(sub.coords).sort()).toEqual(["height", "time"]);
   });
 
+  it("pickVars drops dimensions no longer spanned by any kept variable", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.pickVars(["time"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual([]);
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.dims).toEqual({ time: 3 });
+  });
+
+  it("dropVars drops dimensions whose variables are all removed", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["temperature", "y", "x"]);
+
+    expect(Object.keys(sub.coords)).toEqual(["time"]);
+    expect(sub.dims).toEqual({ time: 3 });
+  });
+
+  it("dropVars can drop a dimension coordinate while keeping the dimension", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["time"]);
+
+    // the dimension survives (temperature still spans it) but its labels are gone
+    expect(sub.dims).toEqual({ time: 3, y: 2, x: 4 });
+    expect(Object.keys(sub.coords).sort()).toEqual(["x", "y"]);
+    expect(Object.keys(sub.data_vars)).toEqual(["temperature"]);
+  });
+
+  it("pickVars preserves lazy data that still loads correctly", async () => {
+    const store = await makeDemoStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    const sub = ds.pickVars(["temperature"]);
+    expect(readSpy).not.toHaveBeenCalled(); // subsetting reads no chunks
+
+    const values = await sub.get("temperature").values();
+    expect(Array.from(values as Float32Array)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+  });
+
+  it("returns an empty dataset for pickVars([]) and an unchanged one for dropVars([])", async () => {
+    const ds = await openDataset(await makeDemoStore());
+
+    const empty = ds.pickVars([]);
+    expect(Object.keys(empty.data_vars)).toEqual([]);
+    expect(Object.keys(empty.coords)).toEqual([]);
+    expect(empty.dims).toEqual({});
+
+    const same = ds.dropVars([]);
+    expect(Object.keys(same.data_vars)).toEqual(["temperature"]);
+    expect(Object.keys(same.coords).sort()).toEqual(["time", "x", "y"]);
+    expect(same.dims).toEqual({ time: 3, y: 2, x: 4 });
+  });
+
   it("throws on unknown variable names", async () => {
     const ds = await openDataset(await makeDemoStore());
     expect(() => ds.dropVars(["salinity"])).toThrow(/no variable named "salinity"/);

@@ -28,7 +28,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "husky && npm run build",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "check:package": "node ./scripts/check-package.mjs",
     "lint": "prettier --check .",
@@ -59,7 +59,6 @@
   "devDependencies": {
     "@types/node": "^22.20.0",
     "@vitest/coverage-v8": "^2.1.9",
-    "husky": "^9.1.7",
     "icechunk-js": "^0.6.0",
     "prettier": "^3.9.4",
     "typescript": "^5.6.0",

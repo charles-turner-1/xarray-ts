@@ -266,6 +266,14 @@ export class Dataset {
       }
     }
 
+    // Only retain axis state for dimensions still spanned by a kept variable;
+    // otherwise dims from dropped variables would linger in `dims`/`coords`.
+    const keepDims = new Set<string>();
+    for (const variable of vars.values()) {
+      for (const dim of variable.dims) keepDims.add(dim);
+    }
+    const axesByDim = new Map([...this.#axesByDim].filter(([dim]) => keepDims.has(dim)));
+
     return new Dataset(
       {
         vars,
@@ -274,7 +282,7 @@ export class Dataset {
         dataVarNames,
         attrs: this.attrs,
       },
-      new Map(this.#axesByDim),
+      axesByDim,
     );
   }
 }
