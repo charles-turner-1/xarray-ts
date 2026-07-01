@@ -27,8 +27,14 @@ export interface Variable {
   readonly name: string;
   /** Named dimensions, in array-axis order (from v3 `dimension_names`). */
   readonly dims: readonly string[];
-  /** The variable's attributes. */
+  /** The variable's user-visible attributes (decode-time keys like `coordinates` removed). */
   readonly attrs: Attrs;
+  /**
+   * Decode-time metadata consumed while opening the store and kept out of the
+   * user-visible {@link Variable.attrs}, mirroring xarray's `.encoding`. Holds
+   * the raw CF `coordinates` string used to classify auxiliary coordinates.
+   */
+  readonly encoding: Attrs;
   /** Shape, in array-axis order. */
   readonly shape: readonly number[];
   /** Zarr data type, e.g. `"float32"`. */

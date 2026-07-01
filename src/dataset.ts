@@ -94,6 +94,45 @@ export class Dataset {
     return this.#dataArray(name);
   }
 
+  /**
+   * Drop variables/coordinates by name, returning a new Dataset with the
+   * remaining structure unchanged and data variables still lazy.
+   */
+  dropVars(names: Iterable<string>): Dataset {
+    const drop = this.#validatedNames(names);
+    const keep = new Set<string>();
+    for (const name of this.#vars.keys()) {
+      if (!drop.has(name)) keep.add(name);
+    }
+    return this.#subset(keep);
+  }
+
+  /**
+   * Keep only the named variables, plus every coordinate whose dimensions are a
+   * subset of the picked variables' dimensions (xarray `Dataset[[names]]`).
+   *
+   * This keeps dimension coordinates for retained dims, scalar coordinates
+   * (empty dims, a subset of anything), and N-d auxiliary coordinates defined
+   * on retained dims — while never resurrecting a dimension that was dropped.
+   */
+  pickVars(names: Iterable<string>): Dataset {
+    const keep = this.#validatedNames(names);
+
+    const neededDims = new Set<string>();
+    for (const name of keep) {
+      for (const dim of this.#vars.get(name)!.dims) neededDims.add(dim);
+    }
+
+    for (const name of this.#coordNames) {
+      if (keep.has(name)) continue;
+      if (this.#vars.get(name)!.dims.every((dim) => neededDims.has(dim))) {
+        keep.add(name);
+      }
+    }
+
+    return this.#subset(keep);
+  }
+
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
     const axes = new Map(this.#axesByDim);
@@ -185,6 +224,55 @@ export class Dataset {
       dataVarNames: this.#dataVarNames,
       attrs: this.attrs,
     };
+  }
+
+  #validatedNames(names: Iterable<string>): Set<string> {
+    const out = new Set<string>();
+    for (const name of names) {
+      if (!this.#vars.has(name)) {
+        throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
+      }
+      out.add(name);
+    }
+    return out;
+  }
+
+  #subset(keep: Set<string>): Dataset {
+    const vars = new Map<string, Variable>();
+    const coords = new Map<string, Coord>();
+    const coordNames = new Set<string>();
+    const dataVarNames = new Set<string>();
+
+    for (const [name, variable] of this.#vars) {
+      if (!keep.has(name)) continue;
+      vars.set(name, variable);
+      if (this.#coordNames.has(name)) {
+        coordNames.add(name);
+        const coord = this.#rootCoords.get(name);
+        if (coord) coords.set(name, coord);
+      } else if (this.#dataVarNames.has(name)) {
+        dataVarNames.add(name);
+      }
+    }
+
+    // Only retain axis state for dimensions still spanned by a kept variable;
+    // otherwise dims from dropped variables would linger in `dims`/`coords`.
+    const keepDims = new Set<string>();
+    for (const variable of vars.values()) {
+      for (const dim of variable.dims) keepDims.add(dim);
+    }
+    const axesByDim = new Map([...this.#axesByDim].filter(([dim]) => keepDims.has(dim)));
+
+    return new Dataset(
+      {
+        vars,
+        coords,
+        coordNames,
+        dataVarNames,
+        attrs: this.attrs,
+      },
+      axesByDim,
+    );
   }
 }
 

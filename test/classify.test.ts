@@ -3,10 +3,13 @@ import { classifyVariables } from "../src/coords.js";
 import type { Variable } from "../src/types.js";
 
 function variable(name: string, dims: string[], attrs: Record<string, unknown> = {}): Variable {
+  // Mirror readVariable: the CF `coordinates` key lives in `encoding`, not `attrs`.
+  const { coordinates, ...rest } = attrs;
   return {
     name,
     dims,
-    attrs,
+    attrs: rest,
+    encoding: coordinates === undefined ? {} : { coordinates },
     shape: dims.map(() => 1),
     dtype: "float32",
     chunks: dims.map(() => 1),

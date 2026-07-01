@@ -8,10 +8,15 @@ import type { Variable, ZarrArray } from "./types.js";
 
 /** Reinterpret an opened zarrita array as an xarray Variable (metadata only; data stays lazy). */
 export function readVariable(arr: ZarrArray, name: string): Variable {
+  // Split decode-time metadata (CF `coordinates`) out of the user-visible attrs,
+  // mirroring xarray, which surfaces it via `.encoding` rather than `.attrs`.
+  const { coordinates, ...attrs } = arr.attrs;
+  const encoding = coordinates === undefined ? {} : { coordinates };
   return {
     name,
     dims: readDims(arr, name),
-    attrs: arr.attrs,
+    attrs,
+    encoding,
     shape: arr.shape,
     dtype: arr.dtype,
     chunks: arr.chunks,
