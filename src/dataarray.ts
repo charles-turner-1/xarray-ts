@@ -76,6 +76,11 @@ export class DataArray {
     return out;
   }
 
+  /** Return a lazy view with the same data/coords but a different variable name. */
+  rename(name: string): DataArray {
+    return new DataArray({ ...this.variable, name }, this.#coords, this.#axes);
+  }
+
   /** Positional selection (xarray `.isel`). Returns a new lazy view. */
   isel(selection: IselSelection): DataArray {
     const axes = this.#axes.slice();

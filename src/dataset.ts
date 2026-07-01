@@ -94,6 +94,23 @@ export class Dataset {
     return this.#dataArray(name);
   }
 
+  /** Rename variables/coordinates without touching underlying data values. */
+  renameVars(names: Record<string, string>): Dataset {
+    return this.#renamed(names, {});
+  }
+
+  /**
+   * Rename dimensions; if a dimension coordinate shares the old dimension name,
+   * rename that coordinate variable too so `.sel()` and `ds.coords` stay aligned.
+   */
+  renameDims(names: Record<string, string>): Dataset {
+    const varRenames: Record<string, string> = {};
+    for (const [oldDim, newDim] of Object.entries(names)) {
+      if (this.#coordNames.has(oldDim)) varRenames[oldDim] = newDim;
+    }
+    return this.#renamed(varRenames, names);
+  }
+
   /**
    * Drop variables/coordinates by name, returning a new Dataset with the
    * remaining structure unchanged and data variables still lazy.
@@ -274,6 +291,89 @@ export class Dataset {
       axesByDim,
     );
   }
+
+  #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
+    const dimTargets = new Set<string>();
+    for (const [oldDim, newDim] of Object.entries(dimRenames)) {
+      if (!this.#dimSizes.has(oldDim)) {
+        throw new Error(`xarray-ts: Dataset has no dimension "${oldDim}".`);
+      }
+      if (oldDim !== newDim && this.#dimSizes.has(newDim) && !Object.hasOwn(dimRenames, newDim)) {
+        throw new Error(
+          `xarray-ts: cannot rename dimension "${oldDim}" to existing dimension "${newDim}".`,
+        );
+      }
+      if (dimTargets.has(newDim)) {
+        throw new Error(`xarray-ts: cannot rename multiple dimensions to "${newDim}".`);
+      }
+      dimTargets.add(newDim);
+    }
+    const varTargets = new Set<string>();
+    for (const [oldName, newName] of Object.entries(varRenames)) {
+      if (!this.#vars.has(oldName)) {
+        throw new Error(`xarray-ts: no variable named "${oldName}" in Dataset.`);
+      }
+      if (oldName !== newName && this.#vars.has(newName) && !Object.hasOwn(varRenames, newName)) {
+        throw new Error(`xarray-ts: cannot rename "${oldName}" to existing variable "${newName}".`);
+      }
+      if (varTargets.has(newName)) {
+        throw new Error(`xarray-ts: cannot rename multiple variables to "${newName}".`);
+      }
+      varTargets.add(newName);
+    }
+
+    const vars = new Map<string, Variable>();
+    const coords = new Map<string, Coord>();
+    const coordNames = new Set<string>();
+    const dataVarNames = new Set<string>();
+
+    for (const [oldName, variable] of this.#vars) {
+      const newName = varRenames[oldName] ?? oldName;
+      vars.set(newName, renameVariable(variable, newName, dimRenames));
+      if (this.#coordNames.has(oldName)) {
+        coordNames.add(newName);
+      } else if (this.#dataVarNames.has(oldName)) {
+        dataVarNames.add(newName);
+      }
+    }
+
+    for (const [oldName, coord] of this.#rootCoords) {
+      const newName = varRenames[oldName] ?? oldName;
+      coords.set(newName, renameCoord(coord, newName, dimRenames));
+    }
+
+    const axesByDim = new Map<string, AxisSel>();
+    for (const [oldDim, axis] of this.#axesByDim) {
+      axesByDim.set(dimRenames[oldDim] ?? oldDim, axis);
+    }
+
+    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+  }
+}
+
+function renameVariable(
+  variable: Variable,
+  name: string,
+  dimRenames: Record<string, string>,
+): Variable {
+  return {
+    ...variable,
+    name,
+    dims: variable.dims.map((dim) => dimRenames[dim] ?? dim),
+  };
+}
+
+function renameCoord(coord: Coord, name: string, dimRenames: Record<string, string>): Coord {
+  const values = coord.values;
+  return {
+    ...coord,
+    name,
+    dims: coord.dims.map((dim) => dimRenames[dim] ?? dim),
+    dates(): Date[] | undefined {
+      if (!coord.isTime || !coord.decoded) return undefined;
+      return (values as number[]).map((ms) => new Date(ms));
+    },
+  };
 }
 
 function computeDimSizes(vars: Map<string, Variable>): Map<string, number> {

@@ -28,6 +28,89 @@ describe("label-range selection", () => {
   });
 });
 
+describe("rename-style metadata operations", () => {
+  it("renameVars renames a data variable without touching coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.renameVars({ temperature: "tas" });
+
+    expect(Object.keys(renamed.data_vars)).toEqual(["tas"]);
+    expect(() => renamed.get("temperature")).toThrow(/no variable named "temperature"/);
+    expect(renamed.get("tas").dims).toEqual(["time", "y", "x"]);
+    expect(Object.keys(renamed.coords).sort()).toEqual(["time", "x", "y"]);
+  });
+
+  it("renameVars renames a coordinate and keeps it out of user-visible attrs", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const renamed = ds.renameVars({ height: "z" });
+
+    expect(Object.keys(renamed.coords).sort()).toEqual(["time", "z"]);
+    expect(Object.keys(renamed.data_vars)).toEqual(["tasmax"]);
+    // `coordinates` is decode-time encoding, never surfaced in attrs (xarray parity).
+    expect(renamed.get("tasmax").attrs).not.toHaveProperty("coordinates");
+  });
+
+  it("renameDims renames dimensions and matching dimension coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.renameDims({ x: "lon", y: "lat" });
+
+    expect(renamed.dims).toEqual({ time: 3, lat: 2, lon: 4 });
+    expect(Object.keys(renamed.coords).sort()).toEqual(["lat", "lon", "time"]);
+    expect(renamed.get("temperature").dims).toEqual(["time", "lat", "lon"]);
+    expect(renamed.sel({ lon: 200 }).dims).toEqual({ time: 3, lat: 2 });
+  });
+
+  it("renameDims renames a dimension that has no coordinate variable", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store: Map<string, Uint8Array> = new Map();
+    await zarr.create(zarr.root(store), {});
+    const arr = await zarr.create(zarr.root(store).resolve("raw"), {
+      shape: [2, 3],
+      chunkShape: [2, 3],
+      dtype: "int16",
+    });
+    const stride = zarr._zarrita_internal_getStrides([2, 3], "C");
+    await zarr.set(arr, null, { data: Int16Array.from([0, 1, 2, 3, 4, 5]), shape: [2, 3], stride });
+
+    const ds = await openDataset(store, { variables: ["raw"] });
+    const renamed = ds.renameDims({ raw_dim_0: "a" });
+
+    expect(renamed.dims).toEqual({ a: 2, raw_dim_1: 3 });
+    expect(renamed.get("raw").dims).toEqual(["a", "raw_dim_1"]);
+  });
+
+  it("DataArray.rename returns a renamed lazy view preserving coords and attrs", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const da = ds.get("temperature");
+    const renamed = da.rename("tas");
+
+    expect(renamed.name).toBe("tas");
+    expect(renamed.dims).toEqual(["time", "y", "x"]);
+    expect(renamed.attrs).toEqual(da.attrs);
+    expect(Object.keys(renamed.coords).sort()).toEqual(Object.keys(da.coords).sort());
+    expect(await renamed.isel({ time: 0 }).values()).toBeInstanceOf(Float32Array);
+  });
+
+  it("renameVars/renameDims read no chunks", async () => {
+    const store = await makeDemoStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    ds.renameVars({ temperature: "tas" });
+    ds.renameDims({ x: "lon" });
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+
+  it("throws on bad rename targets", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.renameVars({ salinity: "salt" })).toThrow(/no variable named "salinity"/);
+    expect(() => ds.renameVars({ temperature: "x" })).toThrow(/existing variable "x"/);
+    expect(() => ds.renameDims({ member: "ensemble" })).toThrow(/no dimension "member"/);
+    expect(() => ds.renameVars({ x: "z", y: "z" })).toThrow(/multiple variables to "z"/);
+    expect(() => ds.renameDims({ x: "d", y: "d" })).toThrow(/multiple dimensions to "d"/);
+  });
+});
+
 describe("dataset variable subset operations", () => {
   it("dropVars removes named data variables but keeps coordinates", async () => {
     const ds = await openDataset(await makeDemoStore());
