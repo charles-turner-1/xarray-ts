@@ -75,6 +75,16 @@ export class Dataset {
     return out;
   }
 
+  /**
+   * All variables — coordinates and data variables — as lazy {@link DataArray}s,
+   * keyed by name and reflecting the current selection (xarray `Dataset.variables`).
+   */
+  get variables(): Record<string, DataArray> {
+    const out: Record<string, DataArray> = {};
+    for (const name of this.#vars.keys()) out[name] = this.#dataArray(name);
+    return out;
+  }
+
   /** Get any variable (coordinate or data variable) as a lazy {@link DataArray}. */
   get(name: string): DataArray {
     if (!this.#vars.has(name)) {
