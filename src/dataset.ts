@@ -210,7 +210,9 @@ export class Dataset {
         throw new Error(`xarray-ts: Dataset has no dimension "${oldDim}".`);
       }
       if (oldDim !== newDim && this.#dimSizes.has(newDim) && !Object.hasOwn(dimRenames, newDim)) {
-        throw new Error(`xarray-ts: cannot rename dimension "${oldDim}" to existing dimension "${newDim}".`);
+        throw new Error(
+          `xarray-ts: cannot rename dimension "${oldDim}" to existing dimension "${newDim}".`,
+        );
       }
     }
     for (const [oldName, newName] of Object.entries(varRenames)) {

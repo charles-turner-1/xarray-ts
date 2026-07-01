@@ -132,17 +132,17 @@ import { datasetFromGroup, type GroupNode } from "xarray-ts";
 
 ## API
 
-| Export                                             | Description                                                                   |
-| -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `openDataset(store, opts?)`                        | Open a zarr v3 store as a `Dataset`.                                          |
-| `openZarr`                                         | Alias of `openDataset`.                                                       |
-| `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                       |
-| `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                          |
+| Export                                             | Description                                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `openDataset(store, opts?)`                        | Open a zarr v3 store as a `Dataset`.                                                                   |
+| `openZarr`                                         | Alias of `openDataset`.                                                                                |
+| `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                                                |
+| `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                                                   |
 | `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `renameVars`, `renameDims`, `isel`, `sel`. |
-| `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `rename`, `isel`, `sel`, `load`, `values`. |
-| `Coord`                                            | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                    |
-| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                        |
-| `openDatatree`                                     | Stub (throws `NotImplementedError`).                                          |
+| `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `rename`, `isel`, `sel`, `load`, `values`.                |
+| `Coord`                                            | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                                             |
+| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                                                 |
+| `openDatatree`                                     | Stub (throws `NotImplementedError`).                                                                   |
 
 ## Development
 
