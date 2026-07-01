@@ -4,6 +4,14 @@
   "description": "A minimal, read-only xarray metadata layer for zarr v3 / icechunk in the browser",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/charles-turner-1/xarray-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/charles-turner-1/xarray-ts/issues"
+  },
+  "homepage": "https://github.com/charles-turner-1/xarray-ts#readme",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
