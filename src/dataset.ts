@@ -128,7 +128,11 @@ export class Dataset {
         const coordsAttr = variable.attrs["coordinates"];
         if (typeof coordsAttr === "string") {
           for (const coordName of coordsAttr.split(/\s+/).filter(Boolean)) {
-            if (this.#coordNames.has(coordName) && this.#vars.has(coordName) && !keep.has(coordName)) {
+            if (
+              this.#coordNames.has(coordName) &&
+              this.#vars.has(coordName) &&
+              !keep.has(coordName)
+            ) {
               keep.add(coordName);
               changed = true;
             }
