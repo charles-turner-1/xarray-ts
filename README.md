@@ -138,7 +138,7 @@ import { datasetFromGroup, type GroupNode } from "xarray-ts";
 | `openZarr`                                         | Alias of `openDataset`.                                                       |
 | `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                       |
 | `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                          |
-| `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `isel`, `sel`.    |
+| `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `dropVars`, `pickVars`, `isel`, `sel`. |
 | `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `isel`, `sel`, `load`, `values`. |
 | `Coord`                                            | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                    |
 | `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                        |

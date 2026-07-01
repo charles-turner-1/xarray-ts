@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, openDataset } from "../src/index.js";
-import { makeDemoStore } from "./fixtures.js";
+import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("store openers", () => {
   it("fromHttp returns a zarrita FetchStore", () => {
@@ -25,6 +25,39 @@ describe("label-range selection", () => {
     const sub = ds.sel({ x: { start: 100, stop: 200 } });
     expect(sub.dims).toEqual({ time: 3, y: 2, x: 2 });
     expect(sub.coords["x"]!.values).toEqual([100, 200]);
+  });
+});
+
+describe("dataset variable subset operations", () => {
+  it("dropVars removes named data variables but keeps coordinates", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.dropVars(["temperature"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual([]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["time", "x", "y"]);
+    expect(sub.dims).toEqual({ time: 3, y: 2, x: 4 });
+  });
+
+  it("pickVars keeps a data variable plus its coordinate closure", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const sub = ds.pickVars(["temperature"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["temperature"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["time", "x", "y"]);
+  });
+
+  it("pickVars keeps auxiliary scalar coordinates referenced by kept variables", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const sub = ds.pickVars(["tasmax"]);
+
+    expect(Object.keys(sub.data_vars)).toEqual(["tasmax"]);
+    expect(Object.keys(sub.coords).sort()).toEqual(["height", "time"]);
+  });
+
+  it("throws on unknown variable names", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.dropVars(["salinity"])).toThrow(/no variable named "salinity"/);
+    expect(() => ds.pickVars(["salinity"])).toThrow(/no variable named "salinity"/);
   });
 });
 

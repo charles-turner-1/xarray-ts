@@ -94,6 +94,52 @@ export class Dataset {
     return this.#dataArray(name);
   }
 
+  /**
+   * Drop variables/coordinates by name, returning a new Dataset with the
+   * remaining structure unchanged and data variables still lazy.
+   */
+  dropVars(names: Iterable<string>): Dataset {
+    const drop = this.#validatedNames(names);
+    const keep = new Set<string>();
+    for (const name of this.#vars.keys()) {
+      if (!drop.has(name)) keep.add(name);
+    }
+    return this.#subset(keep);
+  }
+
+  /**
+   * Keep only the named variables, plus any coordinate closure needed to make
+   * the remaining Dataset structurally useful.
+   */
+  pickVars(names: Iterable<string>): Dataset {
+    const keep = this.#validatedNames(names);
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const name of [...keep]) {
+        const variable = this.#vars.get(name)!;
+        for (const dim of variable.dims) {
+          if (this.#coordNames.has(dim) && this.#vars.has(dim) && !keep.has(dim)) {
+            keep.add(dim);
+            changed = true;
+          }
+        }
+        const coordsAttr = variable.attrs["coordinates"];
+        if (typeof coordsAttr === "string") {
+          for (const coordName of coordsAttr.split(/\s+/).filter(Boolean)) {
+            if (this.#coordNames.has(coordName) && this.#vars.has(coordName) && !keep.has(coordName)) {
+              keep.add(coordName);
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    return this.#subset(keep);
+  }
+
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
     const axes = new Map(this.#axesByDim);
@@ -185,6 +231,47 @@ export class Dataset {
       dataVarNames: this.#dataVarNames,
       attrs: this.attrs,
     };
+  }
+
+  #validatedNames(names: Iterable<string>): Set<string> {
+    const out = new Set<string>();
+    for (const name of names) {
+      if (!this.#vars.has(name)) {
+        throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
+      }
+      out.add(name);
+    }
+    return out;
+  }
+
+  #subset(keep: Set<string>): Dataset {
+    const vars = new Map<string, Variable>();
+    const coords = new Map<string, Coord>();
+    const coordNames = new Set<string>();
+    const dataVarNames = new Set<string>();
+
+    for (const [name, variable] of this.#vars) {
+      if (!keep.has(name)) continue;
+      vars.set(name, variable);
+      if (this.#coordNames.has(name)) {
+        coordNames.add(name);
+        const coord = this.#rootCoords.get(name);
+        if (coord) coords.set(name, coord);
+      } else if (this.#dataVarNames.has(name)) {
+        dataVarNames.add(name);
+      }
+    }
+
+    return new Dataset(
+      {
+        vars,
+        coords,
+        coordNames,
+        dataVarNames,
+        attrs: this.attrs,
+      },
+      new Map(this.#axesByDim),
+    );
   }
 }
 
