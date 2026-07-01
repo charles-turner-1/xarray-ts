@@ -7,6 +7,7 @@
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
+import { INSPECT, formatDimNames, type InspectFn, type InspectOptions } from "./repr.js";
 import type { Attrs, Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
 
 /** Internal assembly input for a Dataset (built by `datasetFromGroup`). */
@@ -119,6 +120,48 @@ export class Dataset {
         : lookupLabel(coord, label, opts);
     }
     return this.isel(positional);
+  }
+
+  /**
+   * Node `util.inspect` hook (`console.log`): an xarray-style summary listing
+   * dimensions, coordinates and data variables (name, dims, dtype) plus
+   * group attributes — no lazy data is read. Ignored by browser consoles.
+   */
+  [INSPECT](_depth: number, options: InspectOptions, inspect: InspectFn): string {
+    const { stylize } = options;
+    const label = (text: string) => stylize(text, "undefined");
+
+    const dimStr = `(${Object.entries(this.dims)
+      .map(([dim, size]) => `${dim}: ${size}`)
+      .join(", ")})`;
+
+    const names = [...this.#coordNames, ...this.#dataVarNames];
+    const width = names.reduce((w, n) => Math.max(w, n.length), 0);
+    const varLine = (name: string, dims: readonly string[], dtype: string) =>
+      `    ${stylize(name.padEnd(width), "string")} ` +
+      `${formatDimNames(dims)} ${stylize(dtype, "special")}`;
+
+    const lines = [stylize("Dataset", "special"), `${label("Dimensions:")}  ${dimStr}`];
+
+    const coords = this.coords;
+    if (this.#coordNames.size) {
+      lines.push(label("Coordinates:"));
+      for (const name of this.#coordNames) {
+        const coord = coords[name];
+        if (coord) lines.push(varLine(name, coord.dims, coord.dtype));
+      }
+    }
+    if (this.#dataVarNames.size) {
+      lines.push(label("Data variables:"));
+      for (const name of this.#dataVarNames) {
+        const v = this.#vars.get(name)!;
+        lines.push(varLine(name, v.dims, v.dtype));
+      }
+    }
+    if (Object.keys(this.attrs).length) {
+      lines.push(`${label("Attributes:")} ${inspect(this.attrs, options)}`);
+    }
+    return lines.join("\n");
   }
 
   /** @internal Build a DataArray for a variable with the Dataset's current selection applied. */

@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, openDataset } from "../src/index.js";
@@ -24,6 +25,44 @@ describe("label-range selection", () => {
     const sub = ds.sel({ x: { start: 100, stop: 200 } });
     expect(sub.dims).toEqual({ time: 3, y: 2, x: 2 });
     expect(sub.coords["x"]!.values).toEqual([100, 200]);
+  });
+});
+
+describe("console.log / util.inspect repr", () => {
+  const plain = (value: unknown) => inspect(value, { colors: false });
+
+  it("renders a DataArray with an xarray-style shape, dtype and chunks", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const out = plain(ds.get("temperature"));
+    expect(out).toContain("DataArray 'temperature' (time: 3, y: 2, x: 4) float32");
+    expect(out).toContain("chunks: (3, 2, 4)");
+    expect(out).toContain("long_name: 'air temperature'");
+    // Never dump the lazy zarrita handle / raw variable internals.
+    expect(out).not.toContain("variable:");
+    expect(out).not.toContain("arr:");
+  });
+
+  it("reflects the current selection (dropped dims + aligned chunks)", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const out = plain(ds.get("temperature").isel({ time: 0 }));
+    expect(out).toContain("(y: 2, x: 4)");
+    expect(out).toContain("chunks: (2, 4)");
+  });
+
+  it("renders a scalar variable as ()", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const out = plain(ds.get("time").isel({ time: 0 }));
+    expect(out).toContain("DataArray 'time' () float64");
+  });
+
+  it("summarises a Dataset's dimensions, coords and data vars", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const out = plain(ds);
+    expect(out).toContain("Dimensions:  (time: 3, y: 2, x: 4)");
+    expect(out).toContain("Coordinates:");
+    expect(out).toContain("Data variables:");
+    expect(out).toContain("temperature (time, y, x) float32");
+    expect(out).toContain("title: 'demo dataset'");
   });
 });
 
