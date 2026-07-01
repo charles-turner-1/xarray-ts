@@ -1,7 +1,7 @@
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
-import { fromHttp, openDataset } from "../src/index.js";
+import { fromHttp, isLazyCoord, openDataset } from "../src/index.js";
 import { makeAuxCoordStore, makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("store openers", () => {
@@ -222,6 +222,114 @@ describe("dataset variable subset operations", () => {
     const ds = await openDataset(await makeDemoStore());
     expect(() => ds.dropVars(["salinity"])).toThrow(/no variable named "salinity"/);
     expect(() => ds.pickVars(["salinity"])).toThrow(/no variable named "salinity"/);
+  });
+});
+
+describe("lazy auxiliary coordinates", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does not read auxiliary coordinate chunks at open (they load on demand)", async () => {
+    const store = await makeAuxCoordStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+    const readsAtOpen = readSpy.mock.calls.length;
+
+    const lat = ds.coords["lat"]!;
+    expect(isLazyCoord(lat)).toBe(true);
+    if (!isLazyCoord(lat)) throw new Error("expected a lazy aux coordinate");
+    expect(lat.dims).toEqual(["y", "x"]);
+
+    // The 2-D lat grid is fetched only now, not at open.
+    const coord = await lat.load();
+    expect(coord.values).toEqual([0, 1, 2, 3]);
+    expect(readSpy.mock.calls.length).toBeGreaterThan(readsAtOpen);
+
+    // Dimension coordinates stay eager and synchronous.
+    const x = ds.coords["x"]!;
+    expect(isLazyCoord(x)).toBe(false);
+    if (isLazyCoord(x)) throw new Error("expected an eager dimension coordinate");
+    expect(x.values).toEqual([100, 200]);
+  });
+
+  it("caches a lazy coordinate's values after the first load", async () => {
+    const store = await makeAuxCoordStore();
+    const ds = await openDataset(store);
+    const lat = ds.coords["lat"]!;
+    if (!isLazyCoord(lat)) throw new Error("expected a lazy aux coordinate");
+
+    const readSpy = vi.spyOn(store, "get");
+    await lat.load();
+    const reads = readSpy.mock.calls.length;
+    await lat.load();
+    expect(readSpy.mock.calls.length).toBe(reads); // second load reads nothing
+  });
+
+  it("rejects label selection by a lazy auxiliary coordinate", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    expect(() => ds.sel({ lat: 1 })).toThrow(/label selection requires an eager dimension/);
+  });
+});
+
+describe("coordinate set/reset operations", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("setCoords promotes a data variable to a lazy coordinate with no IO", async () => {
+    const store = await makeAuxCoordStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    const promoted = ds.setCoords("pr");
+    expect(readSpy).not.toHaveBeenCalled(); // reclassification reads no chunks
+
+    expect(Object.keys(promoted.data_vars)).toEqual(["temp"]);
+    expect(Object.keys(promoted.coords).sort()).toEqual(["lat", "lon", "pr", "x", "y"]);
+    expect(isLazyCoord(promoted.coords["pr"]!)).toBe(true);
+  });
+
+  it("setCoords is idempotent and validates names", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    const once = ds.setCoords("pr");
+    const twice = once.setCoords("pr");
+    expect(Object.keys(twice.coords).sort()).toEqual(["lat", "lon", "pr", "x", "y"]);
+    expect(Object.keys(twice.data_vars)).toEqual(["temp"]);
+    expect(() => ds.setCoords("nope")).toThrow(/no variable named "nope"/);
+  });
+
+  it("setCoords accepts multiple names", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    const promoted = ds.setCoords(["pr", "temp"]);
+    expect(Object.keys(promoted.data_vars)).toEqual([]);
+    expect(Object.keys(promoted.coords).sort()).toEqual(["lat", "lon", "pr", "temp", "x", "y"]);
+  });
+
+  it("resetCoords demotes a coordinate back to a data variable (round-trip)", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    const round = ds.setCoords("pr").resetCoords("pr");
+    expect(Object.keys(round.data_vars).sort()).toEqual(["pr", "temp"]);
+    expect(Object.keys(round.coords).sort()).toEqual(["lat", "lon", "x", "y"]);
+  });
+
+  it("resetCoords() with no args resets every non-dimension coordinate", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    const reset = ds.resetCoords();
+    // aux coords (lat, lon) are demoted; dimension coords (x, y) stay
+    expect(Object.keys(reset.coords).sort()).toEqual(["x", "y"]);
+    expect(Object.keys(reset.data_vars).sort()).toEqual(["lat", "lon", "pr", "temp"]);
+  });
+
+  it("resetCoords refuses to reset a dimension (index) coordinate", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    expect(() => ds.resetCoords("x")).toThrow(/cannot reset index \(dimension\) coordinates/);
+  });
+
+  it("resetCoords with { drop: true } removes the coordinate entirely", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    const dropped = ds.resetCoords("lat", { drop: true });
+    expect(Object.keys(dropped.coords).sort()).toEqual(["lon", "x", "y"]);
+    expect(Object.keys(dropped.data_vars).sort()).toEqual(["pr", "temp"]);
+    expect(() => dropped.get("lat")).toThrow(/no variable named "lat"/);
+    expect(dropped.dims).toEqual({ y: 2, x: 2 }); // grid dims still spanned
   });
 });
 

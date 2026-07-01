@@ -67,8 +67,12 @@ Any zarrita `Readable` store is accepted, so `openDataset(store)` works with
 - **Coordinates vs data variables** using xarray's rule: a variable is a
   coordinate if it is named after a dimension, or referenced by some data
   variable's `coordinates` attribute. Everything else is a data variable.
-- **Eagerly-loaded coordinates** — coordinate arrays are small, so their values
-  are read and cached up front; data variables stay lazy.
+- **Hybrid coordinate loading** — _dimension_ coordinates (1-D, named after their
+  dimension) are small and drive label lookup, so their values are read and cached
+  up front and `.sel()` / `coord.values` stay synchronous. _Auxiliary, scalar and
+  N-d_ coordinates (e.g. curvilinear 2-D `lat(y, x)` / `lon(y, x)` grids) are **lazy**
+  — not read at open, materialised on demand via `await ds.coords.lat.load()`. Data
+  variables stay lazy too. Use `isLazyCoord(coord)` to tell the two apart.
 - **CF time decoding** — coordinates with `units = "<unit> since <reference>"`
   are decoded to epoch milliseconds (and `Date[]` via `coord.dates()`). Only
   standard / proleptic-Gregorian calendars are decoded; non-standard calendars
@@ -132,17 +136,18 @@ import { datasetFromGroup, type GroupNode } from "xarray-ts";
 
 ## API
 
-| Export                                             | Description                                                                                                                    |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `openDataset(store, opts?)`                        | Open a zarr v3 store as a `Dataset`.                                                                                           |
-| `openZarr`                                         | Alias of `openDataset`.                                                                                                        |
-| `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                                                                        |
-| `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                                                                           |
-| `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `dropVars`, `pickVars`, `renameVars`, `renameDims`, `isel`, `sel`. |
-| `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `rename`, `isel`, `sel`, `load`, `values`.                                        |
-| `Coord`                                            | `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                                                                     |
-| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                                                                         |
-| `openDatatree`                                     | Stub (throws `NotImplementedError`).                                                                                           |
+| Export                                             | Description                                                                                                                                                |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openDataset(store, opts?)`                        | Open a zarr v3 store as a `Dataset`.                                                                                                                       |
+| `openZarr`                                         | Alias of `openDataset`.                                                                                                                                    |
+| `fromIcechunk(url, opts?)`                         | Open an icechunk repo as a store (needs `icechunk-js`).                                                                                                    |
+| `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                                                                                                       |
+| `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `dropVars`, `pickVars`, `renameVars`, `renameDims`, `setCoords`, `resetCoords`, `isel`, `sel`. |
+| `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `rename`, `isel`, `sel`, `load`, `values`.                                                                    |
+| `Coord`                                            | Eager dimension coordinate: `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                                                                     |
+| `LazyCoord`                                        | Lazy auxiliary / N-d coordinate: `dims`, `attrs`, `isTime`, `load()`, `values()`. Narrow with `isLazyCoord`.                                               |
+| `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                                                                                                     |
+| `openDatatree`                                     | Stub (throws `NotImplementedError`).                                                                                                                       |
 
 ## Development
 

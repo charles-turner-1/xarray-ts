@@ -9,7 +9,7 @@
  * @module
  */
 import * as zarr from "zarrita";
-import { classifyVariables, loadCoord } from "./coords.js";
+import { classifyVariables, isDimensionCoord, loadCoord } from "./coords.js";
 import { Dataset, type DatasetParts } from "./dataset.js";
 import type { Coord, Variable } from "./types.js";
 import { readVariable } from "./variable.js";
@@ -34,8 +34,9 @@ export interface GroupNode {
  * its child arrays.
  *
  * This is the reusable core of {@link openDataset} and the integration point
- * for the external DataTree library. Coordinate arrays are eagerly loaded (and
- * time axes CF-decoded); data variables stay lazy.
+ * for the external DataTree library. Dimension coordinates are eagerly loaded
+ * (and time axes CF-decoded); auxiliary / N-d coordinates and data variables
+ * stay lazy.
  */
 export async function datasetFromGroup(
   group: zarr.Group<zarr.Readable>,
@@ -51,11 +52,16 @@ export async function datasetFromGroup(
 
   const { coordNames, dataVarNames } = classifyVariables(vars.values());
 
+  // Eagerly materialise only dimension coordinates — they are small and drive the
+  // synchronous `.sel()` path. Auxiliary / scalar / N-d coordinates stay lazy and
+  // are read on demand via `LazyCoord.load()`.
   const coords = new Map<string, Coord>();
   await Promise.all(
-    [...coordNames].map(async (name) => {
-      coords.set(name, await loadCoord(vars.get(name)!));
-    }),
+    [...coordNames]
+      .filter((name) => isDimensionCoord(vars.get(name)!))
+      .map(async (name) => {
+        coords.set(name, await loadCoord(vars.get(name)!));
+      }),
   );
 
   const parts: DatasetParts = {

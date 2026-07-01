@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NotImplementedError, openDataset, openDatatree } from "../src/index.js";
+import { isLazyCoord, NotImplementedError, openDataset, openDatatree } from "../src/index.js";
 import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("openDataset", () => {
@@ -19,6 +19,9 @@ describe("openDataset", () => {
 
     const time = ds.coords["time"]!;
     expect(time.isTime).toBe(true);
+    // `time` is a dimension coordinate, so it is eager (not a LazyCoord).
+    expect(isLazyCoord(time)).toBe(false);
+    if (isLazyCoord(time)) throw new Error("expected an eager dimension coordinate");
     expect(time.decoded).toBe(true);
     expect(time.values).toEqual([Date.UTC(2000, 0, 1), Date.UTC(2000, 0, 2), Date.UTC(2000, 0, 3)]);
     expect(time.dates()?.[1]?.toISOString()).toBe("2000-01-02T00:00:00.000Z");
@@ -38,15 +41,17 @@ describe("openDataset", () => {
 
   it("loads a 0-d scalar coordinate without throwing", async () => {
     // Regression: a scalar coord (e.g. CF `height`) reads back from zarrita as a
-    // bare value, not a chunk, which previously broke coordinate materialisation
-    // and aborted the whole open — no variables could be read.
+    // bare value, not a chunk. It is now a lazy auxiliary coordinate, so opening
+    // never touches it; loading it on demand must still handle the 0-d readback.
     const ds = await openDataset(await makeScalarCoordStore());
     expect(Object.keys(ds.coords).sort()).toEqual(["height", "time"]);
     expect(Object.keys(ds.data_vars)).toEqual(["tasmax"]);
 
     const height = ds.coords["height"]!;
     expect(height.dims).toEqual([]);
-    expect(height.values).toEqual([2]);
+    expect(isLazyCoord(height)).toBe(true);
+    if (!isLazyCoord(height)) throw new Error("expected a lazy scalar coordinate");
+    expect(await height.values()).toEqual([2]);
   });
 
   it("exposes `variables` as the union of coordinates and data variables", async () => {
