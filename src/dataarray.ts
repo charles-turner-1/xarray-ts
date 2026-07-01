@@ -9,6 +9,7 @@
 import * as zarr from "zarrita";
 import { applyIndexer, axisToZarr, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
+import { INSPECT, formatDims, type InspectFn, type InspectOptions } from "./repr.js";
 import type { Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
 
 /** Materialised slice data plus its shape/strides, as returned by `zarrita.get`. */
@@ -111,6 +112,29 @@ export class DataArray {
   async values(opts?: zarr.GetOptions): Promise<Chunk["data"] | Scalar> {
     const result = await this.load(opts);
     return isChunk(result) ? result.data : result;
+  }
+
+  /**
+   * Node `util.inspect` hook (`console.log`): a compact, xarray-style summary of
+   * the current view — dims with sizes, dtype, chunks and attrs — without
+   * touching the lazy data. Ignored by browser consoles.
+   */
+  [INSPECT](_depth: number, options: InspectOptions, inspect: InspectFn): string {
+    const { stylize } = options;
+    const header =
+      `${stylize("DataArray", "special")} ${stylize(`'${this.name}'`, "string")} ` +
+      `${formatDims(this.dims, this.shape)} ${stylize(this.dtype, "special")}`;
+
+    const lines: string[] = [];
+    // Chunk sizes for the axes still present in the current view, aligned to `dims`.
+    const chunks = this.dims.map((dim) => this.variable.chunks[this.variable.dims.indexOf(dim)]);
+    if (chunks.length) {
+      lines.push(`chunks: (${chunks.join(", ")})`);
+    }
+    if (Object.keys(this.attrs).length) {
+      lines.push(`attrs:  ${inspect(this.attrs, options)}`);
+    }
+    return lines.length ? `${header}\n${lines.map((l) => `  ${l}`).join("\n")}` : header;
   }
 
   /** @internal Validate that a dimension exists in the current view. */
