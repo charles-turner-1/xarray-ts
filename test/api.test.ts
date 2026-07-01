@@ -106,6 +106,8 @@ describe("rename-style metadata operations", () => {
     expect(() => ds.renameVars({ salinity: "salt" })).toThrow(/no variable named "salinity"/);
     expect(() => ds.renameVars({ temperature: "x" })).toThrow(/existing variable "x"/);
     expect(() => ds.renameDims({ member: "ensemble" })).toThrow(/no dimension "member"/);
+    expect(() => ds.renameVars({ x: "z", y: "z" })).toThrow(/multiple variables to "z"/);
+    expect(() => ds.renameDims({ x: "d", y: "d" })).toThrow(/multiple dimensions to "d"/);
   });
 });
 

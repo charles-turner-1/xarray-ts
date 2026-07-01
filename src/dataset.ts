@@ -293,6 +293,7 @@ export class Dataset {
   }
 
   #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
+    const dimTargets = new Set<string>();
     for (const [oldDim, newDim] of Object.entries(dimRenames)) {
       if (!this.#dimSizes.has(oldDim)) {
         throw new Error(`xarray-ts: Dataset has no dimension "${oldDim}".`);
@@ -302,7 +303,12 @@ export class Dataset {
           `xarray-ts: cannot rename dimension "${oldDim}" to existing dimension "${newDim}".`,
         );
       }
+      if (dimTargets.has(newDim)) {
+        throw new Error(`xarray-ts: cannot rename multiple dimensions to "${newDim}".`);
+      }
+      dimTargets.add(newDim);
     }
+    const varTargets = new Set<string>();
     for (const [oldName, newName] of Object.entries(varRenames)) {
       if (!this.#vars.has(oldName)) {
         throw new Error(`xarray-ts: no variable named "${oldName}" in Dataset.`);
@@ -310,6 +316,10 @@ export class Dataset {
       if (oldName !== newName && this.#vars.has(newName) && !Object.hasOwn(varRenames, newName)) {
         throw new Error(`xarray-ts: cannot rename "${oldName}" to existing variable "${newName}".`);
       }
+      if (varTargets.has(newName)) {
+        throw new Error(`xarray-ts: cannot rename multiple variables to "${newName}".`);
+      }
+      varTargets.add(newName);
     }
 
     const vars = new Map<string, Variable>();
