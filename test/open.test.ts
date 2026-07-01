@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NotImplementedError, openDataset, openDatatree } from "../src/index.js";
-import { makeDemoStore } from "./fixtures.js";
+import { makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
 
 describe("openDataset", () => {
   it("reconstructs dims, coords, data_vars and attrs from consolidated metadata", async () => {
@@ -34,6 +34,26 @@ describe("openDataset", () => {
   it("throws a helpful error when variables cannot be enumerated", async () => {
     const store = await makeDemoStore({ consolidated: false });
     await expect(openDataset(store)).rejects.toThrow(/cannot enumerate/);
+  });
+
+  it("loads a 0-d scalar coordinate without throwing", async () => {
+    // Regression: a scalar coord (e.g. CF `height`) reads back from zarrita as a
+    // bare value, not a chunk, which previously broke coordinate materialisation
+    // and aborted the whole open — no variables could be read.
+    const ds = await openDataset(await makeScalarCoordStore());
+    expect(Object.keys(ds.coords).sort()).toEqual(["height", "time"]);
+    expect(Object.keys(ds.data_vars)).toEqual(["tasmax"]);
+
+    const height = ds.coords["height"]!;
+    expect(height.dims).toEqual([]);
+    expect(height.values).toEqual([2]);
+  });
+
+  it("exposes `variables` as the union of coordinates and data variables", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(Object.keys(ds.variables).sort()).toEqual(["temperature", "time", "x", "y"]);
+    expect(ds.variables["temperature"]!.dims).toEqual(["time", "y", "x"]);
+    expect(ds.variables["x"]!.dims).toEqual(["x"]);
   });
 
   it("stubs openDatatree with a NotImplementedError", () => {

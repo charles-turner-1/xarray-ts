@@ -51,6 +51,50 @@ export async function makeDemoStore(opts: { consolidated?: boolean } = {}): Prom
   return store;
 }
 
+/**
+ * A store with a 0-d scalar coordinate, mirroring a CF `height` (e.g. 2 m)
+ * referenced by a surface variable's `coordinates` attribute:
+ *   dims      time=3
+ *   coords    time, height (scalar)
+ *   data_vars tasmax(time)  with `coordinates: "height"`
+ */
+export async function makeScalarCoordStore(): Promise<MapStore> {
+  const store: MapStore = new Map();
+  await zarr.create(zarr.root(store), {});
+
+  await writeArray(store, "time", "float64", [3], ["time"], {}, Float64Array.from([0, 1, 2]));
+  await writeScalar(store, "height", "float64", { units: "m", standard_name: "height" }, 2);
+  await writeArray(
+    store,
+    "tasmax",
+    "float32",
+    [3],
+    ["time"],
+    { units: "K", coordinates: "height" },
+    Float32Array.from([280, 281, 282]),
+  );
+
+  consolidate(store);
+  return store;
+}
+
+async function writeScalar<D extends zarr.DataType>(
+  store: MapStore,
+  name: string,
+  dtype: D,
+  attributes: zarr.Attributes,
+  value: zarr.Scalar<D>,
+): Promise<void> {
+  const arr = await zarr.create(zarr.root(store).resolve(name), {
+    shape: [],
+    chunkShape: [],
+    dtype,
+    dimensionNames: [],
+    attributes,
+  });
+  await zarr.set(arr, null, value);
+}
+
 async function writeArray<D extends zarr.DataType>(
   store: MapStore,
   name: string,

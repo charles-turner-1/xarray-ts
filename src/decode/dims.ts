@@ -19,6 +19,9 @@ import type { ZarrArray } from "../types.js";
 export function readDims(arr: ZarrArray, name: string): string[] {
   const declared = arr.dimensionNames;
   const ndim = arr.shape.length;
+  // A 0-d (scalar) array genuinely has no dimensions, so `[]` is correct rather
+  // than a synthetic fallback — don't warn about missing dimension_names.
+  if (ndim === 0) return [];
   if (declared && declared.length === ndim && declared.every((d) => d != null)) {
     return declared.slice();
   }

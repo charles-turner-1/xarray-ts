@@ -49,13 +49,29 @@ function materialize(
 }
 
 /**
+ * Read a coordinate array's values into a flat plain array.
+ *
+ * A 0-d (scalar) coordinate — e.g. a CF scalar `height` referenced by surface
+ * variables — has no chunk to iterate: zarrita returns the bare value. Selecting
+ * with `[]` reads it back as a typed `Scalar`, which we wrap as a length-1 array
+ * so scalar and N-d coordinates share a representation.
+ */
+async function readValues(v: Variable): Promise<Array<number | bigint | string | boolean>> {
+  if (v.shape.length === 0) {
+    const scalar = await zarr.get(v.arr, []);
+    return [scalar as number | bigint | string | boolean];
+  }
+  const chunk = await zarr.get(v.arr, null);
+  return materialize(chunk.data as ArrayLike<unknown> & Iterable<unknown>);
+}
+
+/**
  * Eagerly load a coordinate variable's values, CF-decoding time axes.
  *
  * Reads the whole array (coords are expected to be small, typically 1-D).
  */
 export async function loadCoord(v: Variable): Promise<Coord> {
-  const chunk = await zarr.get(v.arr, null);
-  const raw = materialize(chunk.data as ArrayLike<unknown> & Iterable<unknown>);
+  const raw = await readValues(v);
   const isTime = isTimeUnits(v.attrs);
 
   if (isTime) {
