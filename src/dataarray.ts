@@ -164,6 +164,60 @@ export class DataArray {
     return this.isel(Object.fromEntries(targets.map((d) => [d, 0])));
   }
 
+  /**
+   * Swap a dimension for a 1-D coordinate defined along it (xarray
+   * `DataArray.swap_dims`).
+   *
+   * For `{ x: "lon" }`, dimension `x` is replaced by `lon`: `lon` (which must be
+   * an existing 1-D coordinate of this array along `x`) becomes the new dimension
+   * coordinate, the old `x` coordinate is kept as a non-dimension coordinate
+   * along `lon`, and the array's dims are relabelled. Pure metadata — no data is
+   * read; a prior `isel`/`sel` selection carries over.
+   *
+   * The replacement is a 1-D *auxiliary* coordinate, which is lazy, so the new
+   * dimension coordinate surfaces lazily; label-based `.sel()` along it requires
+   * an eager dimension coordinate (use `isel` instead).
+   */
+  swapDims(dims: Record<string, string>): DataArray {
+    const currentDims = this.dims;
+    const seen = new Set<string>();
+    for (const [oldDim, newName] of Object.entries(dims)) {
+      if (!currentDims.includes(oldDim)) {
+        throw new Error(
+          `xarray-ts: cannot swap from dimension "${oldDim}" — it is not a dimension of "${this.name}".`,
+        );
+      }
+      if (oldDim !== newName && currentDims.includes(newName)) {
+        throw new Error(
+          `xarray-ts: cannot swap dimension "${oldDim}" to existing dimension "${newName}".`,
+        );
+      }
+      if (seen.has(newName)) {
+        throw new Error(`xarray-ts: cannot swap multiple dimensions to "${newName}".`);
+      }
+      seen.add(newName);
+      const coord = this.#coords.get(newName);
+      if (!coord || !(coord.dims.length === 1 && coord.dims[0] === oldDim)) {
+        throw new Error(
+          `xarray-ts: replacement dimension "${newName}" is not a 1-D coordinate along "${oldDim}".`,
+        );
+      }
+    }
+
+    const variable: Variable = {
+      ...this.variable,
+      dims: this.variable.dims.map((dim) => dims[dim] ?? dim),
+    };
+    const coords = new Map<string, AnyCoord>();
+    for (const [name, coord] of this.#coords) {
+      coords.set(
+        name,
+        isLazyCoord(coord) ? renameLazyCoord(coord, name, dims) : renameCoord(coord, name, dims),
+      );
+    }
+    return new DataArray(variable, coords, this.#axes);
+  }
+
   /** Label-based selection (xarray `.sel`). Resolves labels via coordinates, then delegates to `isel`. */
   sel(selection: SelSelection, opts: SelOptions = {}): DataArray {
     const positional: IselSelection = {};
