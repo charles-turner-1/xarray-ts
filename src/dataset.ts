@@ -250,6 +250,76 @@ export class Dataset {
     return this.#reclassified(coordNames, dataVarNames, vars);
   }
 
+  /**
+   * Swap dimension(s) for 1-D variables defined along them (xarray
+   * `Dataset.swap_dims`).
+   *
+   * For `{ x: "lon" }`, dimension `x` is replaced by `lon` everywhere: `lon`
+   * (which must be a 1-D variable along `x`) becomes the new dimension
+   * coordinate, the old `x` coordinate is kept as a non-dimension coordinate
+   * along `lon`, and every variable's dims are relabelled. Pure metadata — no
+   * data is read; a prior `isel`/`sel` selection carries over.
+   *
+   * A swapped-in coordinate that was not eagerly loaded at open surfaces as a
+   * lazy coordinate. As elsewhere, label-based `.sel()` along it requires an
+   * eager dimension coordinate (the same limitation noted on {@link Dataset.setCoords}).
+   */
+  swapDims(dims: Record<string, string>): Dataset {
+    const currentDims = this.dims;
+    const seen = new Set<string>();
+    for (const [oldDim, newName] of Object.entries(dims)) {
+      if (!(oldDim in currentDims)) {
+        throw new Error(
+          `xarray-ts: cannot swap from dimension "${oldDim}" — it is not a dimension of this Dataset.`,
+        );
+      }
+      if (oldDim !== newName && newName in currentDims) {
+        throw new Error(
+          `xarray-ts: cannot swap dimension "${oldDim}" to existing dimension "${newName}".`,
+        );
+      }
+      if (seen.has(newName)) {
+        throw new Error(`xarray-ts: cannot swap multiple dimensions to "${newName}".`);
+      }
+      seen.add(newName);
+      const v = this.#vars.get(newName);
+      if (v && !(v.dims.length === 1 && v.dims[0] === oldDim)) {
+        throw new Error(
+          `xarray-ts: replacement dimension "${newName}" is not a 1-D variable along "${oldDim}".`,
+        );
+      }
+    }
+
+    const vars = new Map<string, Variable>();
+    for (const [name, variable] of this.#vars) {
+      vars.set(name, renameVariable(variable, name, dims));
+    }
+
+    // Promote each swapped-in variable to a coordinate (new dimension coordinate).
+    const coordNames = new Set(this.#coordNames);
+    const dataVarNames = new Set(this.#dataVarNames);
+    for (const newName of Object.values(dims)) {
+      if (vars.has(newName)) {
+        coordNames.add(newName);
+        dataVarNames.delete(newName);
+      }
+    }
+
+    // Relabel the (eager) old dimension coordinates onto the new dimension names;
+    // they stay coordinates but are no longer dimension coordinates.
+    const coords = new Map<string, Coord>();
+    for (const [name, coord] of this.#rootCoords) {
+      coords.set(name, renameCoord(coord, name, dims));
+    }
+
+    const axesByDim = new Map<string, AxisSel>();
+    for (const [oldDim, axis] of this.#axesByDim) {
+      axesByDim.set(dims[oldDim] ?? oldDim, axis);
+    }
+
+    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+  }
+
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
     const axes = new Map(this.#axesByDim);
