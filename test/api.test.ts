@@ -2,7 +2,12 @@ import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zarr from "zarrita";
 import { fromHttp, isLazyCoord, openDataset } from "../src/index.js";
-import { makeAuxCoordStore, makeDemoStore, makeScalarCoordStore } from "./fixtures.js";
+import {
+  makeAuxCoordStore,
+  makeDemoStore,
+  makeScalarCoordStore,
+  makeSqueezeStore,
+} from "./fixtures.js";
 
 describe("store openers", () => {
   it("fromHttp returns a zarrita FetchStore", () => {
@@ -173,6 +178,71 @@ describe("rename-style metadata operations", () => {
     expect(() => ds.renameDims({ member: "ensemble" })).toThrow(/no dimension "member"/);
     expect(() => ds.renameVars({ x: "z", y: "z" })).toThrow(/multiple variables to "z"/);
     expect(() => ds.renameDims({ x: "d", y: "d" })).toThrow(/multiple dimensions to "d"/);
+  });
+});
+
+describe("structural squeeze operations", () => {
+  it("squeeze drops all size-1 dimensions and keeps their coordinates as scalars", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    const squeezed = ds.squeeze();
+
+    expect(squeezed.dims).toEqual({ time: 3, y: 2 });
+    expect(squeezed.coords["level"]!.dims).toEqual([]);
+    expect(squeezed.coords["level"]!.values).toEqual([1000]);
+    expect(squeezed.get("temperature").dims).toEqual(["time", "y"]);
+  });
+
+  it("squeeze(dim) drops only the named dimension", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    const squeezed = ds.squeeze("level");
+
+    expect(squeezed.dims).toEqual({ time: 3, y: 2 });
+    expect(squeezed.get("temperature").dims).toEqual(["time", "y"]);
+  });
+
+  it("squeeze throws on a dimension of size > 1", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    expect(() => ds.squeeze("time")).toThrow(/cannot squeeze dimension "time" of size 3/);
+  });
+
+  it("squeeze throws on an unknown dimension", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    expect(() => ds.squeeze("nope")).toThrow(/no dimension "nope"/);
+  });
+
+  it("DataArray.squeeze drops size-1 dims and still loads the right shape", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    const da = ds.get("temperature").squeeze();
+
+    expect(da.dims).toEqual(["time", "y"]);
+    expect(da.coords["level"]!.dims).toEqual([]);
+    const values = await da.isel({ time: 0 }).values();
+    expect(values).toBeInstanceOf(Float32Array);
+    expect((values as Float32Array).length).toBe(2);
+  });
+
+  it("DataArray.squeeze throws on a dimension of size > 1", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    expect(() => ds.get("temperature").squeeze("time")).toThrow(
+      /cannot squeeze dimension "time" of size 3/,
+    );
+  });
+
+  it("squeeze reads the current view's sizes, composing with prior selection", async () => {
+    const ds = await openDataset(await makeSqueezeStore());
+    expect(ds.isel({ time: 0 }).squeeze().dims).toEqual({ y: 2 });
+  });
+
+  it("squeeze reads no chunks", async () => {
+    const store = await makeSqueezeStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    ds.squeeze();
+    ds.squeeze("level");
+    ds.get("temperature").squeeze();
+    expect(readSpy).not.toHaveBeenCalled();
   });
 });
 
