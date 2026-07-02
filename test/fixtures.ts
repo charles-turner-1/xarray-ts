@@ -97,6 +97,42 @@ export async function makeSqueezeStore(): Promise<MapStore> {
 }
 
 /**
+ * A store for exercising `swapDims`: a data variable that is 1-D along an
+ * existing dimension, so it can be promoted to that dimension's coordinate.
+ *   dims      x=3, y=2
+ *   coords    x (=[0,1,2]), y (=[10,20])
+ *   data_vars lon(x) (=[100,110,120]), temp(y, x) with values 0..5 (row-major)
+ */
+export async function makeSwapDimsStore(): Promise<MapStore> {
+  const store: MapStore = new Map();
+  await zarr.create(zarr.root(store), {});
+
+  await writeArray(store, "x", "float64", [3], ["x"], {}, Float64Array.from([0, 1, 2]));
+  await writeArray(store, "y", "float64", [2], ["y"], {}, Float64Array.from([10, 20]));
+  await writeArray(
+    store,
+    "lon",
+    "float64",
+    [3],
+    ["x"],
+    { units: "degrees_east" },
+    Float64Array.from([100, 110, 120]),
+  );
+  await writeArray(
+    store,
+    "temp",
+    "float32",
+    [2, 3],
+    ["y", "x"],
+    { units: "K" },
+    Float32Array.from({ length: 6 }, (_, i) => i),
+  );
+
+  consolidate(store);
+  return store;
+}
+
+/**
  * A store with a 0-d scalar coordinate, mirroring a CF `height` (e.g. 2 m)
  * referenced by a surface variable's `coordinates` attribute:
  *   dims      time=3

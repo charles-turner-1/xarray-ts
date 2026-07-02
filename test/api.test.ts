@@ -7,6 +7,7 @@ import {
   makeDemoStore,
   makeScalarCoordStore,
   makeSqueezeStore,
+  makeSwapDimsStore,
 } from "./fixtures.js";
 
 describe("store openers", () => {
@@ -242,6 +243,74 @@ describe("structural squeeze operations", () => {
     ds.squeeze();
     ds.squeeze("level");
     ds.get("temperature").squeeze();
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("dimension swap operations", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("swapDims replaces the dimension and promotes the new coordinate", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    const swapped = ds.swapDims({ x: "lon" });
+
+    expect(swapped.dims).toEqual({ lon: 3, y: 2 });
+    expect(swapped.get("temp").dims).toEqual(["y", "lon"]);
+    expect(Object.keys(swapped.data_vars)).toEqual(["temp"]);
+    expect(Object.keys(swapped.coords).sort()).toEqual(["lon", "x", "y"]);
+  });
+
+  it("swapDims makes the new dim coord lazy and demotes the old one", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    const swapped = ds.swapDims({ x: "lon" });
+
+    const lon = swapped.coords["lon"]!;
+    expect(isLazyCoord(lon)).toBe(true);
+    expect(lon.dims).toEqual(["lon"]);
+
+    const x = swapped.coords["x"]!;
+    expect(isLazyCoord(x)).toBe(false);
+    if (isLazyCoord(x)) throw new Error("expected the demoted coordinate to stay eager");
+    expect(x.dims).toEqual(["lon"]); // now a non-dimension coordinate
+    expect(x.values).toEqual([0, 1, 2]);
+  });
+
+  it("swapDims loads the swapped-in coordinate on demand", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    const lon = ds.swapDims({ x: "lon" }).coords["lon"]!;
+    if (!isLazyCoord(lon)) throw new Error("expected a lazy dimension coordinate");
+    expect([...(await lon.values())]).toEqual([100, 110, 120]);
+  });
+
+  it("swapDims validates dimensions and replacement variables", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    expect(() => ds.swapDims({ z: "lon" })).toThrow(/"z" — it is not a dimension/);
+    expect(() => ds.swapDims({ x: "temp" })).toThrow(
+      /replacement dimension "temp" is not a 1-D variable along "x"/,
+    );
+    expect(() => ds.swapDims({ x: "y" })).toThrow(/to existing dimension "y"/);
+  });
+
+  it("label selection along a lazily-swapped dimension is unsupported", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    expect(() => ds.swapDims({ x: "lon" }).sel({ lon: 110 })).toThrow(/requires an eager/);
+  });
+
+  it("swapDims composes with a subsequent isel", async () => {
+    const ds = await openDataset(await makeSwapDimsStore());
+    expect(ds.swapDims({ x: "lon" }).isel({ lon: 0 }).dims).toEqual({ y: 2 });
+  });
+
+  it("swapDims reads no chunks", async () => {
+    const store = await makeSwapDimsStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    const swapped = ds.swapDims({ x: "lon" });
+    void swapped.dims;
+    void swapped.coords;
+    void swapped.get("temp").dims;
     expect(readSpy).not.toHaveBeenCalled();
   });
 });
