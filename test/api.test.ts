@@ -405,6 +405,76 @@ describe("lazy auxiliary coordinates", () => {
   });
 });
 
+describe("auxiliary coordinates on DataArray", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("exposes 1-D and scalar auxiliary coordinates on a DataArray", async () => {
+    const ds = await openDataset(await makeScalarCoordStore());
+    const coords = ds.get("tasmax").coords;
+
+    expect(Object.keys(coords).sort()).toEqual(["height", "time"]);
+    // Dimension coordinate stays eager; the scalar aux coordinate is lazy.
+    expect(isLazyCoord(coords["time"]!)).toBe(false);
+    const height = coords["height"]!;
+    expect(isLazyCoord(height)).toBe(true);
+    if (!isLazyCoord(height)) throw new Error("expected a lazy scalar coordinate");
+    expect(height.dims).toEqual([]);
+    expect([...(await height.values())]).toEqual([2]);
+  });
+
+  it("exposes N-D auxiliary coordinates whose dims are a subset of the array's", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+
+    const temp = ds.get("temp").coords;
+    expect(Object.keys(temp).sort()).toEqual(["lat", "lon", "x", "y"]);
+    const lat = temp["lat"]!;
+    expect(isLazyCoord(lat)).toBe(true);
+    if (!isLazyCoord(lat)) throw new Error("expected a lazy aux coordinate");
+    expect(lat.dims).toEqual(["y", "x"]);
+    expect([...(await lat.values())]).toEqual([0, 1, 2, 3]);
+
+    // pr never names lat/lon, but they span its dims, so they are kept (subset rule).
+    expect(Object.keys(ds.get("pr").coords).sort()).toEqual(["lat", "lon", "x", "y"]);
+  });
+
+  it("still slices eager dimension coordinates to the current selection", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const coord = ds.get("temperature").isel({ x: 0 }).coords["x"]!;
+    expect(coord.dims).toEqual([]); // integer-indexed dim collapses its coordinate to a scalar
+    expect(coord.values).toEqual([100]);
+  });
+
+  it("renames an auxiliary coordinate, keeping it lazy and relabelling its dims", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+
+    const renamed = ds.get("temp").rename({ lat: "latitude" });
+    const latitude = renamed.coords["latitude"]!;
+    expect(isLazyCoord(latitude)).toBe(true);
+    if (!isLazyCoord(latitude)) throw new Error("expected a lazy aux coordinate");
+    expect([...(await latitude.values())]).toEqual([0, 1, 2, 3]);
+
+    const dimRenamed = ds.get("temp").rename({ y: "yy" });
+    expect(dimRenamed.coords["lat"]!.dims).toEqual(["yy", "x"]);
+  });
+
+  it("rejects DataArray label selection by a lazy auxiliary coordinate", async () => {
+    const ds = await openDataset(await makeAuxCoordStore());
+    expect(() => ds.get("temp").sel({ lat: 1 })).toThrow(/requires an eager/);
+  });
+
+  it("reads no chunks when inspecting a DataArray's coordinates", async () => {
+    const store = await makeAuxCoordStore();
+    const readSpy = vi.spyOn(store, "get");
+    const ds = await openDataset(store);
+
+    readSpy.mockClear();
+    const coords = ds.get("temp").coords;
+    void Object.keys(coords);
+    void coords["lat"]!.dims;
+    expect(readSpy).not.toHaveBeenCalled(); // lazy coords stay unloaded
+  });
+});
+
 describe("coordinate set/reset operations", () => {
   afterEach(() => vi.restoreAllMocks());
 

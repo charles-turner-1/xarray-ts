@@ -360,7 +360,22 @@ export class Dataset {
   #dataArray(name: string): DataArray {
     const variable = this.#vars.get(name)!;
     const axes = variable.dims.map((dim) => this.#axisFor(dim));
-    return new DataArray(variable, this.#rootCoords, axes);
+    return new DataArray(variable, this.#allCoords(), axes);
+  }
+
+  /**
+   * @internal The full coordinate collection, unsliced: eager {@link Coord}s for
+   * dimension coordinates, lazy {@link LazyCoord}s for auxiliary / scalar / N-d
+   * coordinates. A DataArray filters these to its own dimensions and slices the
+   * eager ones against its positional axes.
+   */
+  #allCoords(): Map<string, AnyCoord> {
+    const out = new Map<string, AnyCoord>();
+    for (const name of this.#coordNames) {
+      const eager = this.#rootCoords.get(name);
+      out.set(name, eager ?? makeLazyCoord(this.#vars.get(name)!));
+    }
+    return out;
   }
 
   /** @internal Current axis selection for a dimension (full if untouched/unknown). */

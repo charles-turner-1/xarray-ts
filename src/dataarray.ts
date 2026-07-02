@@ -8,10 +8,10 @@
  */
 import * as zarr from "zarrita";
 import { applyIndexer, axisToZarr, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
-import { renameCoord } from "./coords.js";
+import { isLazyCoord, renameCoord, renameLazyCoord } from "./coords.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDims, type InspectFn, type InspectOptions } from "./repr.js";
-import type { Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
+import type { AnyCoord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
 
 /** Materialised slice data plus its shape/strides, as returned by `zarrita.get`. */
 export type Chunk = zarr.Chunk<zarr.DataType>;
@@ -24,9 +24,9 @@ export class DataArray {
   /** @internal Per-original-axis selection, aligned to `variable.dims`. */
   readonly #axes: AxisSel[];
   /** @internal All coordinates available from the parent Dataset (full, unsliced). */
-  readonly #coords: ReadonlyMap<string, Coord>;
+  readonly #coords: ReadonlyMap<string, AnyCoord>;
 
-  constructor(variable: Variable, coords: ReadonlyMap<string, Coord>, axes?: AxisSel[]) {
+  constructor(variable: Variable, coords: ReadonlyMap<string, AnyCoord>, axes?: AxisSel[]) {
     this.variable = variable;
     this.#coords = coords;
     this.#axes = axes ?? variable.shape.map(fullAxis);
@@ -60,19 +60,26 @@ export class DataArray {
   }
 
   /**
-   * Coordinates relevant to this array, sliced to the current selection.
+   * Coordinates relevant to this array — every coordinate whose dimensions are a
+   * subset of the array's dimensions (mirroring xarray).
    *
-   * Includes 1-D coordinates for the array's dimensions (sliced), and scalar
-   * coordinates for dimensions that have been integer-indexed away. Multi-
-   * dimensional auxiliary coordinates are omitted in this version.
+   * Dimension coordinates are eager {@link Coord}s, sliced to the current
+   * selection (an integer-indexed dimension collapses its coordinate to a
+   * scalar); auxiliary / scalar / N-d coordinates surface as lazy
+   * {@link LazyCoord}s. N-d coordinates are returned unsliced — propagating a
+   * partial selection through them is future work.
    */
-  get coords(): Record<string, Coord> {
-    const out: Record<string, Coord> = {};
+  get coords(): Record<string, AnyCoord> {
+    const out: Record<string, AnyCoord> = {};
     for (const [name, coord] of this.#coords) {
-      if (coord.dims.length !== 1) continue;
-      const axisIndex = this.variable.dims.indexOf(coord.dims[0]!);
-      if (axisIndex === -1) continue;
-      out[name] = sliceCoord(coord, this.#axes[axisIndex]!);
+      if (!coord.dims.every((dim) => this.variable.dims.includes(dim))) continue;
+      if (isLazyCoord(coord)) {
+        out[name] = coord;
+      } else if (coord.dims.length === 1) {
+        out[name] = sliceCoord(coord, this.#axes[this.variable.dims.indexOf(coord.dims[0]!)]!);
+      } else {
+        out[name] = coord;
+      }
     }
     return out;
   }
@@ -105,9 +112,15 @@ export class DataArray {
       name: arg[this.name] ?? this.name,
       dims: this.variable.dims.map((dim) => arg[dim] ?? dim),
     };
-    const coords = new Map<string, Coord>();
+    const coords = new Map<string, AnyCoord>();
     for (const [name, coord] of this.#coords) {
-      coords.set(arg[name] ?? name, renameCoord(coord, arg[name] ?? name, arg));
+      const newName = arg[name] ?? name;
+      coords.set(
+        newName,
+        isLazyCoord(coord)
+          ? renameLazyCoord(coord, newName, arg)
+          : renameCoord(coord, newName, arg),
+      );
     }
     return new DataArray(variable, coords, this.#axes);
   }
@@ -159,6 +172,12 @@ export class DataArray {
       const coord = sliced[dim];
       if (!coord) {
         throw new Error(`xarray-ts: no coordinate named "${dim}" to select by label.`);
+      }
+      if (isLazyCoord(coord)) {
+        throw new Error(
+          `xarray-ts: cannot select by "${dim}" — label selection requires an eager ` +
+            `dimension coordinate (auxiliary coordinates are lazy; use \`isel\` instead).`,
+        );
       }
       positional[dim] = isLabelSlice(label)
         ? toSliceArg(lookupLabelSlice(coord, label))
