@@ -5,7 +5,7 @@
  * @module
  */
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
-import { isDimensionCoord, isLazyCoord, makeLazyCoord } from "./coords.js";
+import { isDimensionCoord, isLazyCoord, makeLazyCoord, renameCoord } from "./coords.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDimNames, type InspectFn, type InspectOptions } from "./repr.js";
@@ -107,6 +107,32 @@ export class Dataset {
       throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
     }
     return this.#dataArray(name);
+  }
+
+  /**
+   * Rename variables, coordinates and/or dimensions in one call (xarray
+   * `Dataset.rename`), without touching underlying data values.
+   *
+   * Each key is dispatched by what it names: a variable/coordinate renames the
+   * variable; a dimension renames the dimension across every variable; a
+   * dimension coordinate (a name that is both) renames both, keeping `.sel()`
+   * and `ds.coords` aligned. A key that is neither is an error.
+   */
+  rename(names: Record<string, string>): Dataset {
+    const varRenames: Record<string, string> = {};
+    const dimRenames: Record<string, string> = {};
+    for (const [oldName, newName] of Object.entries(names)) {
+      const isVar = this.#vars.has(oldName);
+      const isDim = this.#dimSizes.has(oldName);
+      if (!isVar && !isDim) {
+        throw new Error(
+          `xarray-ts: cannot rename "${oldName}" — not a variable or dimension in this Dataset.`,
+        );
+      }
+      if (isVar) varRenames[oldName] = newName;
+      if (isDim) dimRenames[oldName] = newName;
+    }
+    return this.#renamed(varRenames, dimRenames);
   }
 
   /** Rename variables/coordinates without touching underlying data values. */
@@ -472,19 +498,6 @@ function renameVariable(
     ...variable,
     name,
     dims: variable.dims.map((dim) => dimRenames[dim] ?? dim),
-  };
-}
-
-function renameCoord(coord: Coord, name: string, dimRenames: Record<string, string>): Coord {
-  const values = coord.values;
-  return {
-    ...coord,
-    name,
-    dims: coord.dims.map((dim) => dimRenames[dim] ?? dim),
-    dates(): Date[] | undefined {
-      if (!coord.isTime || !coord.decoded) return undefined;
-      return (values as number[]).map((ms) => new Date(ms));
-    },
   };
 }
 
