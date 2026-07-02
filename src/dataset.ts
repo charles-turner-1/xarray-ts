@@ -285,6 +285,36 @@ export class Dataset {
   }
 
   /**
+   * Drop dimensions of size 1 (xarray `Dataset.squeeze`).
+   *
+   * With no argument, drops every size-1 dimension; with `dim`, drops only those
+   * (erroring if a named dimension is not size 1). A dropped dimension coordinate
+   * is retained as a scalar coordinate. Metadata-only — no data is read.
+   *
+   * (xarray's `drop=True` and positional `axis=` forms are not implemented.)
+   */
+  squeeze(dim?: string | string[]): Dataset {
+    const sizes = this.dims; // current sizes, honouring prior isel/sel
+    const targets =
+      dim === undefined
+        ? Object.keys(sizes).filter((d) => sizes[d] === 1)
+        : typeof dim === "string"
+          ? [dim]
+          : dim;
+    for (const d of targets) {
+      if (!(d in sizes)) {
+        throw new Error(`xarray-ts: Dataset has no dimension "${d}".`);
+      }
+      if (sizes[d] !== 1) {
+        throw new Error(
+          `xarray-ts: cannot squeeze dimension "${d}" of size ${sizes[d]} (must be 1).`,
+        );
+      }
+    }
+    return this.isel(Object.fromEntries(targets.map((d) => [d, 0])));
+  }
+
+  /**
    * Node `util.inspect` hook (`console.log`): an xarray-style summary listing
    * dimensions, coordinates and data variables (name, dims, dtype) plus
    * group attributes — no lazy data is read. Ignored by browser consoles.

@@ -122,6 +122,35 @@ export class DataArray {
     return new DataArray(this.variable, this.#coords, axes);
   }
 
+  /**
+   * Drop dimensions of size 1 (xarray `DataArray.squeeze`). With no argument,
+   * drops every size-1 dimension; with `dim`, drops only those (erroring if a
+   * named dimension is not size 1). A dropped dimension coordinate is retained
+   * as a scalar coordinate. Metadata-only — no data is read.
+   */
+  squeeze(dim?: string | string[]): DataArray {
+    const size = new Map(this.dims.map((d, i) => [d, this.shape[i]!]));
+    const targets =
+      dim === undefined
+        ? [...size].filter(([, s]) => s === 1).map(([d]) => d)
+        : typeof dim === "string"
+          ? [dim]
+          : dim;
+    for (const d of targets) {
+      if (!size.has(d)) {
+        throw new Error(
+          `xarray-ts: "${this.name}" has no dimension "${d}" (dims: ${JSON.stringify(this.dims)}).`,
+        );
+      }
+      if (size.get(d) !== 1) {
+        throw new Error(
+          `xarray-ts: cannot squeeze dimension "${d}" of size ${size.get(d)} (must be 1).`,
+        );
+      }
+    }
+    return this.isel(Object.fromEntries(targets.map((d) => [d, 0])));
+  }
+
   /** Label-based selection (xarray `.sel`). Resolves labels via coordinates, then delegates to `isel`. */
   sel(selection: SelSelection, opts: SelOptions = {}): DataArray {
     const positional: IselSelection = {};

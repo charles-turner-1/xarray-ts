@@ -52,6 +52,51 @@ export async function makeDemoStore(opts: { consolidated?: boolean } = {}): Prom
 }
 
 /**
+ * A store with a size-1 dimension (and its dimension coordinate), for exercising
+ * `squeeze`:
+ *   dims      time=3, level=1, y=2
+ *   coords    time (CF "days since 2000-01-01"), level (=[1000]), y
+ *   data_vars temperature(time, level, y)  with values 0..5 (row-major)
+ */
+export async function makeSqueezeStore(): Promise<MapStore> {
+  const store: MapStore = new Map();
+  await zarr.create(zarr.root(store), {});
+
+  await writeArray(
+    store,
+    "time",
+    "float64",
+    [3],
+    ["time"],
+    { units: "days since 2000-01-01", calendar: "standard" },
+    Float64Array.from([0, 1, 2]),
+  );
+  await writeArray(
+    store,
+    "level",
+    "float64",
+    [1],
+    ["level"],
+    { units: "hPa" },
+    Float64Array.from([1000]),
+  );
+  await writeArray(store, "y", "float64", [2], ["y"], {}, Float64Array.from([10, 20]));
+
+  await writeArray(
+    store,
+    "temperature",
+    "float32",
+    [3, 1, 2],
+    ["time", "level", "y"],
+    { units: "K" },
+    Float32Array.from({ length: 6 }, (_, i) => i),
+  );
+
+  consolidate(store);
+  return store;
+}
+
+/**
  * A store with a 0-d scalar coordinate, mirroring a CF `height` (e.g. 2 m)
  * referenced by a surface variable's `coordinates` attribute:
  *   dims      time=3
