@@ -137,6 +137,26 @@ export function renameCoord(coord: Coord, name: string, dimRenames: Record<strin
   };
 }
 
+/**
+ * Return a copy of a lazy coordinate with a new name and its dimensions
+ * relabelled through `dimRenames`. The underlying `load()` is preserved (values
+ * are still read on demand); the loaded {@link Coord} is relabelled through
+ * {@link renameCoord} so a materialised time coordinate keeps working.
+ */
+export function renameLazyCoord(
+  coord: LazyCoord,
+  name: string,
+  dimRenames: Record<string, string>,
+): LazyCoord {
+  return {
+    ...coord,
+    name,
+    dims: coord.dims.map((dim) => dimRenames[dim] ?? dim),
+    load: () => coord.load().then((loaded) => renameCoord(loaded, name, dimRenames)),
+    values: () => coord.values(),
+  };
+}
+
 function makeCoord(
   v: Variable,
   values: ReadonlyArray<number | bigint | string | boolean>,
