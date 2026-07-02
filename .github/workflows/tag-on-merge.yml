@@ -1,0 +1,49 @@
+name: Tag on merge
+
+# Watches main for version bumps. When a commit lands on main whose package.json
+# version has no matching vX.Y.Z tag yet (i.e. a merged Release PR), this creates
+# and pushes that tag. The tag push triggers the CD workflow, which publishes to
+# npm. Ordinary merges that don't change the version are a no-op.
+#
+# Only a TAG ref (refs/tags/vX.Y.Z) is ever pushed — never refs/heads/main — so
+# the main branch-protection ruleset does not apply here. The tag is pushed with
+# a fine-grained PAT (secret RELEASE_TOKEN) rather than the default GITHUB_TOKEN,
+# because a tag push made with GITHUB_TOKEN would NOT trigger the CD workflow.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tag:
+    name: tag version bump
+    if: github.repository == 'charles-turner-1/xarray-ts'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }} # PAT so the tag push triggers CD
+
+      - name: Tag the release if the version is new
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+
+          # No-op unless this commit introduced a not-yet-released version. Check
+          # both the local tags (fetched above) and the remote, to be safe.
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+            || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists — nothing to release."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "refs/tags/${TAG}"
+          echo "Pushed ${TAG}; CD will publish to npm."

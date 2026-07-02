@@ -1,11 +1,15 @@
 name: Release
 
-# Manually triggered from the Actions tab. Bumps the version, commits, and pushes
-# a vX.Y.Z tag. Pushing that tag triggers the CD workflow, which publishes to npm.
+# Manually triggered from the Actions tab. Bumps the version on a short-lived
+# branch and opens a pull request — it does NOT push to main or create a tag.
 #
-# The tag is pushed with a fine-grained PAT (secret RELEASE_TOKEN) rather than the
-# default GITHUB_TOKEN: pushes made with the default token do NOT trigger other
-# workflows, so CD would never fire.
+# Merging that PR lands the bump on main through the normal (branch-protected)
+# path; the `tag-on-merge` workflow then creates and pushes the vX.Y.Z tag, and
+# that tag push triggers the CD workflow, which publishes to npm.
+#
+# The branch push and PR are made with a fine-grained PAT (secret RELEASE_TOKEN)
+# rather than the default GITHUB_TOKEN: a PR opened by GITHUB_TOKEN does NOT
+# trigger the `pull_request` CI workflow, so CI would never run on the release PR.
 on:
   workflow_dispatch:
     inputs:
@@ -17,8 +21,8 @@ on:
         options: [patch, minor, major]
 
 jobs:
-  tag:
-    name: bump version and push tag
+  bump:
+    name: open version-bump PR
     if: github.repository == 'charles-turner-1/xarray-ts'
     runs-on: ubuntu-latest
 
@@ -28,7 +32,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }} # PAT so the tag push triggers CD
+          token: ${{ secrets.RELEASE_TOKEN }} # PAT so CI runs on the opened PR
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -39,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Fail before creating the tag, so a broken build never leaves an orphan tag.
+      # Fail before opening a PR, so a broken tree never becomes a release candidate.
       - name: Run lint
         run: npm run lint
 
@@ -54,10 +58,26 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version, commit, and tag
-        # npm version bumps package.json + package-lock.json, commits, and creates
-        # tag vX.Y.Z on that commit — all locally.
-        run: npm version "${{ inputs.bump }}" -m "Release v%s"
+      - name: Bump version on a release branch
+        id: bump
+        # --no-git-tag-version bumps package.json + package-lock.json only: no commit,
+        # no tag. We make the commit ourselves on a dedicated branch.
+        run: |
+          NEW_VERSION="$(npm version "${{ inputs.bump }}" --no-git-tag-version)"
+          NEW_VERSION="${NEW_VERSION#v}"
+          BRANCH="release/v${NEW_VERSION}"
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          git switch -c "${BRANCH}"
+          git commit -am "Release v${NEW_VERSION}"
+          git push --force-with-lease origin "${BRANCH}"
 
-      - name: Push commit and tag
-        run: git push --follow-tags origin main
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ steps.bump.outputs.branch }}" \
+            --title "Release v${{ steps.bump.outputs.version }}" \
+            --body "Automated version bump to \`v${{ steps.bump.outputs.version }}\`. Merging this PR publishes the release: the \`tag-on-merge\` workflow tags the merged commit and CD publishes to npm."
