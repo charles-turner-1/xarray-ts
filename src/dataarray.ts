@@ -8,6 +8,7 @@
  */
 import * as zarr from "zarrita";
 import { applyIndexer, axisToZarr, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
+import { renameCoord } from "./coords.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDims, type InspectFn, type InspectOptions } from "./repr.js";
 import type { Coord, IselSelection, SelOptions, SelSelection, Variable } from "./types.js";
@@ -76,9 +77,39 @@ export class DataArray {
     return out;
   }
 
-  /** Return a lazy view with the same data/coords but a different variable name. */
-  rename(name: string): DataArray {
-    return new DataArray({ ...this.variable, name }, this.#coords, this.#axes);
+  /** Rename the array itself (xarray `DataArray.rename("new_name")`). */
+  rename(name: string): DataArray;
+  /**
+   * Rename this array's dimensions and/or coordinates (xarray
+   * `DataArray.rename({ old: new })`). Pure relabel — the selection is
+   * unchanged, no data is read.
+   */
+  rename(names: Record<string, string>): DataArray;
+  rename(arg: string | Record<string, string>): DataArray {
+    if (typeof arg === "string") {
+      return new DataArray({ ...this.variable, name: arg }, this.#coords, this.#axes);
+    }
+
+    for (const key of Object.keys(arg)) {
+      const isDim = this.variable.dims.includes(key);
+      const isCoord = this.#coords.has(key);
+      if (!isDim && !isCoord) {
+        throw new Error(
+          `xarray-ts: "${this.name}" has no dimension or coordinate "${key}" to rename.`,
+        );
+      }
+    }
+
+    const variable: Variable = {
+      ...this.variable,
+      name: arg[this.name] ?? this.name,
+      dims: this.variable.dims.map((dim) => arg[dim] ?? dim),
+    };
+    const coords = new Map<string, Coord>();
+    for (const [name, coord] of this.#coords) {
+      coords.set(arg[name] ?? name, renameCoord(coord, arg[name] ?? name, arg));
+    }
+    return new DataArray(variable, coords, this.#axes);
   }
 
   /** Positional selection (xarray `.isel`). Returns a new lazy view. */

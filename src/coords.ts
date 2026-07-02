@@ -119,6 +119,24 @@ export async function loadCoord(v: Variable): Promise<Coord> {
   return makeCoord(v, raw, false, false);
 }
 
+/**
+ * Return a copy of a coordinate with a new name and its dimensions relabelled
+ * through `dimRenames`. Pure metadata: the values are shared, and the `dates()`
+ * closure is rebound so time coordinates keep working after the rename.
+ */
+export function renameCoord(coord: Coord, name: string, dimRenames: Record<string, string>): Coord {
+  const values = coord.values;
+  return {
+    ...coord,
+    name,
+    dims: coord.dims.map((dim) => dimRenames[dim] ?? dim),
+    dates(): Date[] | undefined {
+      if (!coord.isTime || !coord.decoded) return undefined;
+      return (values as number[]).map((ms) => new Date(ms));
+    },
+  };
+}
+
 function makeCoord(
   v: Variable,
   values: ReadonlyArray<number | bigint | string | boolean>,

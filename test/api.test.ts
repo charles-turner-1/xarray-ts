@@ -90,7 +90,70 @@ describe("rename-style metadata operations", () => {
     expect(await renamed.isel({ time: 0 }).values()).toBeInstanceOf(Float32Array);
   });
 
-  it("renameVars/renameDims read no chunks", async () => {
+  it("rename renames a data variable, leaving coordinates untouched", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.rename({ temperature: "tas" });
+
+    expect(Object.keys(renamed.data_vars)).toEqual(["tas"]);
+    expect(Object.keys(renamed.coords).sort()).toEqual(["time", "x", "y"]);
+    expect(renamed.get("tas").dims).toEqual(["time", "y", "x"]);
+  });
+
+  it("rename renames dimensions and their dimension coordinates together", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.rename({ x: "lon", y: "lat" });
+
+    expect(renamed.dims).toEqual({ time: 3, lat: 2, lon: 4 });
+    expect(Object.keys(renamed.coords).sort()).toEqual(["lat", "lon", "time"]);
+    expect(renamed.get("temperature").dims).toEqual(["time", "lat", "lon"]);
+    expect(renamed.sel({ lon: 200 }).dims).toEqual({ time: 3, lat: 2 });
+  });
+
+  it("rename dispatches a variable and a dimension in a single call", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.rename({ temperature: "tas", x: "lon" });
+
+    expect(Object.keys(renamed.data_vars)).toEqual(["tas"]);
+    expect(renamed.dims).toEqual({ time: 3, y: 2, lon: 4 });
+    expect(renamed.get("tas").dims).toEqual(["time", "y", "lon"]);
+  });
+
+  it("rename of a dimension coordinate keeps dim, coord and .sel aligned", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const renamed = ds.rename({ time: "t" });
+
+    expect(renamed.dims).toEqual({ t: 3, y: 2, x: 4 });
+    expect(Object.keys(renamed.coords).sort()).toEqual(["t", "x", "y"]);
+    expect(renamed.get("temperature").dims).toEqual(["t", "y", "x"]);
+    expect(renamed.coords["t"]!.dims).toEqual(["t"]);
+    expect(renamed.isel({ t: 1 }).dims).toEqual({ y: 2, x: 4 });
+  });
+
+  it("rename throws on a name that is neither a variable nor a dimension", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.rename({ nope: "z" })).toThrow(/not a variable or dimension/);
+  });
+
+  it("DataArray.rename({ dim }) relabels dims/coords, keeping the view lazy", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    const da = ds.get("temperature");
+    const renamed = da.rename({ x: "lon" });
+
+    expect(renamed.dims).toEqual(["time", "y", "lon"]);
+    expect(Object.keys(renamed.coords).sort()).toEqual(["lon", "time", "y"]);
+    expect(renamed.coords["lon"]!.values).toEqual([100, 200, 300, 400]);
+    expect(renamed.sel({ lon: 200 }).shape).toEqual([3, 2]);
+    expect(await renamed.isel({ time: 0 }).values()).toBeInstanceOf(Float32Array);
+  });
+
+  it("DataArray.rename throws on an unknown dim/coord key", async () => {
+    const ds = await openDataset(await makeDemoStore());
+    expect(() => ds.get("temperature").rename({ nope: "z" })).toThrow(
+      /has no dimension or coordinate "nope"/,
+    );
+  });
+
+  it("renameVars/renameDims/rename read no chunks", async () => {
     const store = await makeDemoStore();
     const readSpy = vi.spyOn(store, "get");
     const ds = await openDataset(store);
@@ -98,6 +161,8 @@ describe("rename-style metadata operations", () => {
     readSpy.mockClear();
     ds.renameVars({ temperature: "tas" });
     ds.renameDims({ x: "lon" });
+    ds.rename({ temperature: "tas", x: "lon", time: "t" });
+    ds.get("temperature").rename({ x: "lon" });
     expect(readSpy).not.toHaveBeenCalled();
   });
 
