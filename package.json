@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "description": "A minimal, read-only xarray metadata layer for zarr v3 / icechunk in the browser",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/charles-turner-1/xarray-ts.git"

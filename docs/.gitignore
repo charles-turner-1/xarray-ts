@@ -1,0 +1,8 @@
+# build output
+dist/
+.astro/
+node_modules/
+
+# generated at build time — do not commit
+public/playground.js
+src/content/docs/api/

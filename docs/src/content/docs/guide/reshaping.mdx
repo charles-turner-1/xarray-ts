@@ -1,0 +1,79 @@
+---
+title: Reshaping the view
+description: Rename, drop, pick, promote and squeeze — all metadata-only.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+These operations relabel or restructure the metadata view. They are all **pure
+and lazy** — no data is read, and each returns a new object.
+
+## Renaming
+
+`rename` accepts a `{ old: new }` map over variables, dimensions and
+coordinates. `renameVars` and `renameDims` are the narrower forms.
+
+<RunnableCell
+  title="rename"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const renamed = ds.rename({ temperature: "temp", x: "lon" });
+console.log("data_vars:", Object.keys(renamed.data_vars));
+console.log("dims:", renamed.dims);`}
+/>
+
+## Dropping and picking variables
+
+<RunnableCell
+  title="dropVars / pickVars"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+console.log("drop:", Object.keys(ds.dropVars(["temperature"]).data_vars));
+console.log("pick:", Object.keys(ds.pickVars(["temperature"]).variables));`}
+/>
+
+## Coordinates in and out
+
+`setCoords` promotes data variables to coordinates; `resetCoords` demotes
+non-dimension coordinates back (optionally dropping them).
+
+<RunnableCell
+  title="setCoords / resetCoords"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+// Promote 'temperature' to a coordinate, then demote it again.
+const promoted = ds.setCoords("temperature");
+console.log("after setCoords -> coords:", Object.keys(promoted.coords));
+
+const reset = promoted.resetCoords("temperature");
+console.log("after resetCoords -> data_vars:", Object.keys(reset.data_vars));`}
+/>
+
+## swapDims
+
+`swapDims` exchanges a dimension for a 1-D coordinate defined along it. Here the
+`makeSwapDimsStore()` demo has `lon(x)`, so we can make `lon` the dimension.
+
+<RunnableCell
+  title="swapDims"
+  code={`const ds = await openDataset(await makeSwapDimsStore());
+
+console.log("before:", ds.dims); // { x: 3, y: 2 }
+console.log("after: ", ds.swapDims({ x: "lon" }).dims); // { lon: 3, y: 2 }`}
+/>
+
+## squeeze
+
+`squeeze` drops size-1 dimensions (all of them, or the ones you name). A dropped
+dimension coordinate is retained as a scalar coordinate.
+
+<RunnableCell
+  title="squeeze"
+  code={`const ds = await openDataset(await makeSqueezeStore());
+const da = ds.get("temperature");   // dims (time, level, y), level has size 1
+
+console.log("before:", da.dims); // (time, level, y)
+console.log("after: ", da.squeeze().dims); // (time, y)`}
+/>
+
+Next: [loading data](/guide/loading/).

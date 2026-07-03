@@ -1,0 +1,60 @@
+---
+title: Loading data
+description: Streaming a selection with load() and values().
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+Metadata is synchronous; **values are lazy**. A `DataArray` only touches bytes
+when you ask it to, and it streams **just the selected slice** through zarrita —
+not the whole array.
+
+- **`.load()`** returns a zarrita `Chunk`: `{ data, shape, stride }`.
+- **`.values()`** is a convenience that returns just the `data` (a `TypedArray`),
+  or a bare scalar when every dimension was integer-indexed.
+
+## load() vs values()
+
+<RunnableCell
+  title="A 2-D slice"
+  code={`const ds = await openDataset(await makeDemoStore());
+const da = ds.get("temperature").isel({ time: 0 });   // (y, x)
+
+const chunk = await da.load();
+console.log("shape:", chunk.shape); // [2, 4]
+console.log("stride:", chunk.stride);
+
+const values = await da.values();
+console.log("values:", Array.from(values));`}
+/>
+
+## Down to a scalar
+
+Index every dimension and you get a single value back.
+
+<RunnableCell
+  title="A single point"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const point = await ds.get("temperature").isel({ time: 1, y: 0, x: 2 }).values();
+console.log("scalar:", point);`}
+/>
+
+Because selection is lazy, you can build a view up in steps and only pay for it
+at the end:
+
+<RunnableCell
+  title="Lazy until the last line"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const view = ds
+.get("temperature")
+.isel({ time: 2 }) // no fetch
+.sel({ x: { start: 200, stop: 400 } }); // no fetch
+
+console.log("planned shape:", view.shape);
+const data = await view.values(); // one streamed read, here
+console.log("data:", Array.from(data));`}
+/>
+
+Next: [opening stores](/guide/opening-stores/).

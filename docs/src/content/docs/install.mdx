@@ -1,0 +1,36 @@
+---
+title: Installation
+description: Add xarray-ts to your project.
+---
+
+xarray-ts is published to npm as an ESM-only package. Its only runtime
+dependency is [zarrita](https://zarrita.dev).
+
+```sh
+npm install xarray-ts zarrita
+```
+
+To open [icechunk](https://icechunk.io) repositories, also install the optional
+peer dependency — it is dynamically imported only when you call `fromIcechunk`,
+so it never loads unless you use it:
+
+```sh
+npm install icechunk-js
+```
+
+## Importing
+
+Everything is exported from the package root:
+
+```ts
+import { openDataset, fromHttp, fromIcechunk, isLazyCoord } from "xarray-ts";
+import type { Dataset, DataArray, AnyCoord } from "xarray-ts";
+```
+
+## Requirements
+
+- **ESM only.** The package sets `"type": "module"` and ships no CommonJS build.
+- **Browser or Node.** The library is browser-safe — no Node built-ins — so it
+  runs in the browser, a bundler, Deno, or Node ≥ 18.
+- **zarr v3.** It reads zarr v3 metadata (`dimension_names`, consolidated
+  metadata). zarr v2 stores are out of scope.

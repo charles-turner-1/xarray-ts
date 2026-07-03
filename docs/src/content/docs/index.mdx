@@ -1,0 +1,58 @@
+---
+title: Introduction
+description: A minimal, read-only xarray metadata layer for zarr v3 / icechunk in the browser.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+**xarray-ts** reinterprets the zarr arrays produced by serialising an xarray
+`Dataset` (e.g. to an [icechunk](https://icechunk.io) store) into an
+xarray-shaped object — dimensions, coordinates, data variables, attributes —
+that view layers can introspect, while streaming actual slices on demand through
+[zarrita](https://zarrita.dev).
+
+It is **not** a reimplementation of xarray. It does exactly one job: turn a zarr
+group into the metadata you need to drive a viewer, and make selecting a slice a
+one-liner.
+
+```
+icechunk-js / zarrita FetchStore   →   xarray-ts   →   your view layer
+   (bytes, chunks, AsyncReadable)      (this lib)       (rendering)
+```
+
+## Try it right now
+
+Every code cell in these docs is **live and editable, and runs entirely in your
+browser** — no server, no network, no real data. The demo dataset below is built
+in memory with zarrita (a tiny `time × y × x` grid). Edit the code and press
+**Run**.
+
+<RunnableCell
+  title="A first look"
+  code={`// Open the in-memory demo store as an xarray-style Dataset.
+const ds = await openDataset(await makeDemoStore());
+
+// A Dataset prints an xarray-style summary — dims, coords, data variables.
+ds`}
+/>
+
+## What it interprets
+
+- **Dimensions** from the zarr v3 `dimension_names` metadata field.
+- **Coordinates vs data variables** using xarray's rule: a variable is a
+  coordinate if it is named after a dimension, or referenced by some data
+  variable's `coordinates` attribute. Everything else is a data variable.
+- **Hybrid coordinate loading** — dimension coordinates are read eagerly (so
+  `.sel()` stays synchronous); auxiliary, scalar and N-d coordinates are lazy.
+- **CF time decoding** — `units = "<unit> since <reference>"` coordinates are
+  decoded to `Date`s for standard / proleptic-Gregorian calendars.
+
+It deliberately does **not** apply `scale_factor` / `add_offset` / `_FillValue`
+masking, and does not implement computation, alignment, or writing.
+
+## Where to next
+
+- [Installation](/install/) — add it to your project.
+- [Getting started](/getting-started/) — open a store and read metadata.
+- [Data model](/guide/data-model/) — `Dataset`, `DataArray`, coords vs data vars.
+- [API reference](/api/readme/) — generated from the source.

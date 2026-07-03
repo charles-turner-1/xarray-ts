@@ -1,0 +1,60 @@
+---
+title: Coordinates
+description: Eager dimension coordinates vs lazy auxiliary coordinates.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+Coordinates come in two flavours, loaded differently:
+
+- **Dimension coordinates** — 1-D and named after their dimension (e.g. `time`,
+  `x`). They are small and drive label lookup, so their values are **read
+  eagerly** at open and cached. `coord.values` and `.sel()` stay synchronous.
+  These are `Coord` objects.
+- **Auxiliary, scalar and N-d coordinates** — e.g. a curvilinear 2-D `lat(y, x)`
+  / `lon(y, x)` grid, or a scalar `height`. These can be large, so they are
+  **lazy** — not read at open, materialised on demand. These are `LazyCoord`
+  objects.
+
+Use `isLazyCoord(coord)` to tell them apart.
+
+## Eager dimension coordinates
+
+<RunnableCell
+  title="A dimension coordinate is eager"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const x = ds.coords.x;
+console.log("isLazy:", isLazyCoord(x)); // false
+console.log("dims:", x.dims);
+x.values; // available synchronously`}
+/>
+
+## Lazy auxiliary coordinates
+
+The `makeAuxCoordStore()` demo has 2-D `lat(y, x)` and `lon(y, x)` auxiliary
+coordinates referenced by a variable's `coordinates` attribute. They surface as
+`LazyCoord`s — you `await` their values.
+
+<RunnableCell
+  title="A 2-D auxiliary coordinate is lazy"
+  code={`const ds = await openDataset(await makeAuxCoordStore());
+
+const lat = ds.coords.lat;
+console.log("isLazy:", isLazyCoord(lat)); // true
+console.log("dims:", lat.dims); // ["y", "x"]
+
+// Nothing was read until now:
+const values = await lat.values();
+console.log("values:", Array.from(values));
+
+// .load() returns a full eager Coord you can reuse:
+const eager = await lat.load();
+console.log("loaded isLazy:", isLazyCoord(eager)); // false`}
+/>
+
+Because auxiliary coordinates are lazy, label-based `.sel()` along them is not
+supported — use `isel`, or `.load()` the coordinate first. See
+[selection](/guide/selection/).
+
+Next: [CF time decoding](/guide/time/).

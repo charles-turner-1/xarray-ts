@@ -1,0 +1,39 @@
+---
+/**
+ * An editable, runnable TypeScript cell. Pure vanilla TS island (no UI
+ * framework): the static markup is server-rendered, then a small client script
+ * upgrades it with a CodeMirror editor and wires the Run button. Everything
+ * executes in the browser against the in-memory demo stores — offline, no data
+ * leaves the page.
+ */
+interface Props {
+  /** Initial TypeScript source shown in the editor. */
+  code: string;
+  /** Optional caption shown above the cell. */
+  title?: string;
+}
+
+const { code, title } = Astro.props;
+---
+
+<figure class="rc" data-rc>
+  {title && <figcaption class="rc-title">{title}</figcaption>}
+
+  {/* Server-rendered fallback: readable source until CodeMirror hydrates. */}
+  <div class="rc-editor"><pre class="rc-fallback">{code}</pre></div>
+
+  <div class="rc-toolbar">
+    <button class="rc-run" type="button">▶ Run</button>
+    <span class="rc-hint">runs in your browser · no data leaves the page</span>
+  </div>
+
+  <div class="rc-output" hidden></div>
+</figure>
+
+<script>
+  import { setupRunnableCells } from "@components/runnable-cells.ts";
+  // Runs on initial load (module scripts are deferred) and after client-side
+  // navigations. `setupRunnableCells` is idempotent per cell.
+  setupRunnableCells();
+  document.addEventListener("astro:page-load", setupRunnableCells);
+</script>

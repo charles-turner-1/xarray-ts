@@ -1,0 +1,50 @@
+---
+title: Nested groups & DataTree
+description: The seam for hierarchical, multi-group traversal.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+xarray-ts opens a **single group** at a path and returns a flat `Dataset`.
+Recursive, nested-group / `DataTree` traversal is **left unimplemented for now**:
+I (Charles Turner) am planning to use zarr groups for a slightly unusual purpose,
+so I've held off on committing to a hierarchy model. If the library picks up
+users beyond me — or once I find the time — I'll add it. The building blocks are
+already here, exposed as a small, documented seam so the metadata-interpretation
+logic lives in exactly one place and a hierarchy walker can be layered on top.
+
+## The seam
+
+- **`datasetFromGroup(group, arrayNames)`** — the reusable core that turns one
+  already-resolved zarrita `Group` (plus the names of its child arrays) into a
+  `Dataset`. A hierarchy walker calls this **per node**.
+- **`childArrayNames(contents, groupPath)`** — given a consolidated-metadata
+  listing, the direct-child array names of a group.
+- **`GroupNode`** — the tree-node contract (`{ path, dataset, children }`) an
+  external walker produces and consumes.
+
+```ts
+import { datasetFromGroup, childArrayNames, type GroupNode } from "xarray-ts";
+```
+
+A tree walker resolves each zarr group, asks `childArrayNames` which arrays hang
+directly off it, hands both to `datasetFromGroup`, and assembles the resulting
+`Dataset`s into a tree of `GroupNode`s.
+
+## openDatatree is a stub
+
+Calling `openDatatree()` throws a `NotImplementedError` that points you here —
+it exists so the intent is discoverable from the API surface.
+
+<RunnableCell
+  title="openDatatree() throws on purpose"
+  code={`try {
+  openDatatree();
+} catch (err) {
+  console.log(err.constructor.name);   // NotImplementedError
+  console.log(err.message);
+}`}
+/>
+
+That's the whole guide — head to the [API reference](/api/readme/) for exact
+signatures and types.
