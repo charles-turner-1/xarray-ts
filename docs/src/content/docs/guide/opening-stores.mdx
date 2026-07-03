@@ -47,7 +47,7 @@ relies on an explicit variable list — exactly the fallback path:
 const store = await makeDemoStore({ consolidated: false });
 
 const ds = await openDataset(store, {
-  variables: ["time", "x", "y", "temperature"],
+variables: ["time", "x", "y", "temperature"],
 });
 console.log("dims:", ds.dims);
 console.log("variables:", Object.keys(ds.variables));`}

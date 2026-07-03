@@ -19,9 +19,9 @@ fetched until you call `.load()` / `.values()`.
   code={`const ds = await openDataset(await makeDemoStore());
 const da = ds.get("temperature");   // dims (time, y, x)
 
-console.log("integer:", da.isel({ time: 0 }).dims);            // (y, x)
-console.log("slice:  ", da.isel({ x: { start: 1, stop: 3 } }).dims,
-            da.isel({ x: { start: 1, stop: 3 } }).shape);       // (time, y, x) [3, 2, 2]`}
+console.log("integer:", da.isel({ time: 0 }).dims); // (y, x)
+console.log("slice: ", da.isel({ x: { start: 1, stop: 3 } }).dims,
+da.isel({ x: { start: 1, stop: 3 } }).shape); // (time, y, x) [3, 2, 2]`}
 />
 
 ## sel — by label
@@ -35,11 +35,11 @@ console.log("slice:  ", da.isel({ x: { start: 1, stop: 3 } }).dims,
 const da = ds.get("temperature");   // x coord is [100, 200, 300, 400]
 
 // Inclusive label range on x -> keeps x = 200, 300
-console.log("range:", da.sel({ x: { start: 200, stop: 300 } }).shape);  // [3, 2, 2]
+console.log("range:", da.sel({ x: { start: 200, stop: 300 } }).shape); // [3, 2, 2]
 
 // Nearest-neighbour lookup on the decoded time axis
 const picked = da.sel({ time: new Date("2000-01-02") }, { method: "nearest" });
-console.log("nearest:", picked.dims);   // (y, x) — time collapsed`}
+console.log("nearest:", picked.dims); // (y, x) — time collapsed`}
 />
 
 Auxiliary coordinates are lazy, so `sel` along them throws — use `isel`, or
@@ -55,7 +55,7 @@ named dimension and return a new `Dataset`.
   code={`const ds = await openDataset(await makeDemoStore());
 
 const step = ds.isel({ time: 0 });
-console.log("dims after isel:", step.dims);   // time dropped everywhere
+console.log("dims after isel:", step.dims); // time dropped everywhere
 step`}
 />
 

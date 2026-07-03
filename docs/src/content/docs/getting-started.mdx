@@ -48,8 +48,8 @@ Data variables and selections stay lazy — nothing is fetched until you call
   code={`const ds = await openDataset(await makeDemoStore());
 
 const frame = await ds.get("temperature").isel({ time: 0 }).load();
-console.log("shape:", frame.shape);   // (y, x)
-frame.data;                            // the TypedArray for that slice`}
+console.log("shape:", frame.shape); // (y, x)
+frame.data; // the TypedArray for that slice`}
 />
 
 Next: the [data model](/guide/data-model/) — how a `Dataset` decides what is a

@@ -58,8 +58,8 @@ console.log("after resetCoords -> data_vars:", Object.keys(reset.data_vars));`}
   title="swapDims"
   code={`const ds = await openDataset(await makeSwapDimsStore());
 
-console.log("before:", ds.dims);                  // { x: 3, y: 2 }
-console.log("after: ", ds.swapDims({ x: "lon" }).dims);   // { lon: 3, y: 2 }`}
+console.log("before:", ds.dims); // { x: 3, y: 2 }
+console.log("after: ", ds.swapDims({ x: "lon" }).dims); // { lon: 3, y: 2 }`}
 />
 
 ## squeeze
@@ -72,8 +72,8 @@ dimension coordinate is retained as a scalar coordinate.
   code={`const ds = await openDataset(await makeSqueezeStore());
 const da = ds.get("temperature");   // dims (time, level, y), level has size 1
 
-console.log("before:", da.dims);            // (time, level, y)
-console.log("after: ", da.squeeze().dims);  // (time, y)`}
+console.log("before:", da.dims); // (time, level, y)
+console.log("after: ", da.squeeze().dims); // (time, y)`}
 />
 
 Next: [loading data](/guide/loading/).

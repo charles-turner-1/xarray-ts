@@ -35,12 +35,7 @@ async function initCell(root: HTMLElement): Promise<void> {
     ]);
     const view = new EditorView({
       doc: initialCode,
-      extensions: [
-        basicSetup,
-        javascript({ typescript: true }),
-        oneDark,
-        EditorView.lineWrapping,
-      ],
+      extensions: [basicSetup, javascript({ typescript: true }), oneDark, EditorView.lineWrapping],
       parent: editorHost,
     });
     fallback?.remove();

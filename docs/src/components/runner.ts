@@ -83,10 +83,7 @@ export async function runCell(code: string): Promise<RunResult> {
  * {@link runCell} (which only adds bundle loading) so it can be exercised in a
  * plain Node harness against the built bundle.
  */
-export async function runAgainst(
-  mod: Record<string, unknown>,
-  code: string,
-): Promise<RunResult> {
+export async function runAgainst(mod: Record<string, unknown>, code: string): Promise<RunResult> {
   const logs: LogLine[] = [];
   let js: string;
   try {

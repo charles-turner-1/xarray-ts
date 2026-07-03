@@ -21,7 +21,7 @@ not the whole array.
 const da = ds.get("temperature").isel({ time: 0 });   // (y, x)
 
 const chunk = await da.load();
-console.log("shape:", chunk.shape);       // [2, 4]
+console.log("shape:", chunk.shape); // [2, 4]
 console.log("stride:", chunk.stride);
 
 const values = await da.values();
@@ -48,12 +48,12 @@ at the end:
   code={`const ds = await openDataset(await makeDemoStore());
 
 const view = ds
-  .get("temperature")
-  .isel({ time: 2 })                 // no fetch
-  .sel({ x: { start: 200, stop: 400 } });  // no fetch
+.get("temperature")
+.isel({ time: 2 }) // no fetch
+.sel({ x: { start: 200, stop: 400 } }); // no fetch
 
 console.log("planned shape:", view.shape);
-const data = await view.values();    // one streamed read, here
+const data = await view.values(); // one streamed read, here
 console.log("data:", Array.from(data));`}
 />
 
