@@ -1,0 +1,106 @@
+.rc {
+  margin: 1.5rem 0;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: var(--sl-color-black);
+}
+
+.rc-title {
+  padding: 0.5rem 0.85rem;
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+  color: var(--sl-color-white);
+  background: var(--sl-color-gray-6);
+  border-bottom: 1px solid var(--sl-color-gray-5);
+}
+
+.rc-editor .cm-editor {
+  font-size: var(--sl-text-code);
+}
+
+.rc-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.rc-fallback {
+  margin: 0;
+  padding: 0.85rem;
+  overflow-x: auto;
+  font-size: var(--sl-text-code);
+  color: var(--sl-color-gray-2);
+  background: #282c34; /* matches the one-dark editor while hydrating */
+}
+
+.rc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-gray-6);
+}
+
+.rc-run {
+  padding: 0.3rem 0.9rem;
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+  color: var(--sl-color-black);
+  background: var(--sl-color-accent-high);
+  border: none;
+  border-radius: 0.35rem;
+  cursor: pointer;
+}
+
+.rc-run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rc-hint {
+  font-size: var(--sl-text-xs);
+  color: var(--sl-color-gray-3);
+}
+
+.rc-output {
+  border-top: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-gray-7, var(--sl-color-black));
+}
+
+.rc-output pre {
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  overflow-x: auto;
+  font-size: var(--sl-text-code);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rc-log {
+  color: var(--sl-color-gray-1);
+  border-bottom: 1px solid var(--sl-color-gray-6);
+}
+
+.rc-log-warn {
+  color: var(--sl-color-orange-high, #d98613);
+}
+
+.rc-log-error,
+.rc-error {
+  color: var(--sl-color-red-high, #e5484d);
+}
+
+.rc-result {
+  color: var(--sl-color-white);
+}
+
+.rc-result::before {
+  content: "⟶ ";
+  color: var(--sl-color-accent-high);
+}
+
+.rc-empty {
+  color: var(--sl-color-gray-3);
+  font-style: italic;
+}

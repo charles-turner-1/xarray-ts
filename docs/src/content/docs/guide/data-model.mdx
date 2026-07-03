@@ -1,0 +1,60 @@
+---
+title: Data model
+description: Dataset, DataArray, and the coordinate-vs-data-variable rule.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+xarray-ts mirrors xarray's core objects:
+
+- A **`Dataset`** is a collection of named variables sharing a set of dimensions,
+  plus coordinates and attributes.
+- A **`DataArray`** is a single named N-D array — one variable, with the
+  coordinates relevant to it attached.
+
+## variables vs data_vars
+
+Every array in the group is a **variable**. xarray-ts splits them into
+**coordinates** and **data variables** using xarray's rule: a variable is a
+coordinate if it is **named after a dimension** (a _dimension coordinate_), or it
+is **referenced by some data variable's `coordinates` attribute** (an _auxiliary
+coordinate_). Everything else is a data variable.
+
+- `ds.coords` — the coordinates.
+- `ds.data_vars` — the data variables (each a `DataArray`).
+- `ds.variables` — everything, keyed by name.
+
+<RunnableCell
+  title="Coordinates vs data variables"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+// time, y, x are named after dimensions -> coordinates.
+// temperature is left over -> a data variable.
+console.log("coords:", Object.keys(ds.coords));
+console.log("data_vars:", Object.keys(ds.data_vars));
+console.log("all variables:", Object.keys(ds.variables));`}
+/>
+
+## Getting a DataArray
+
+`ds.get(name)` returns a `DataArray`. It knows its `dims`, `shape`, `dtype`,
+`attrs` and the `coords` whose dimensions are a subset of its own — all
+synchronously.
+
+<RunnableCell
+  title="A DataArray"
+  code={`const ds = await openDataset(await makeDemoStore());
+const da = ds.get("temperature");
+
+console.log("name:", da.name);
+console.log("dims:", da.dims);
+console.log("shape:", da.shape);
+console.log("dtype:", da.dtype);
+console.log("attrs:", da.attrs);
+
+// A DataArray prints an xarray-style summary too:
+da`}
+/>
+
+Next: [coordinates](/guide/coordinates/) — eager dimension coordinates vs lazy
+auxiliary ones.

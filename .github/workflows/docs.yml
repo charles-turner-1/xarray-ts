@@ -1,0 +1,71 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "test/fixtures.ts"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Allow the workflow to publish to GitHub Pages via OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One in-flight Pages deployment at a time; let running ones finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build & verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      # Root install provides the library source's deps (zarrita), which the
+      # docs playground bundle resolves when esbuild bundles src/ + fixtures.
+      - name: Install library deps
+        run: npm ci
+
+      - name: Install docs deps
+        working-directory: docs
+        run: npm ci
+
+      # Runs the esbuild bundle, generates the TypeDoc API reference, and builds
+      # the static site into docs/dist.
+      - name: Build docs
+        working-directory: docs
+        run: npm run build
+
+      # Execute every runnable cell's real code against the built bundle so a
+      # broken example fails the build rather than shipping.
+      - name: Verify runnable cells
+        working-directory: docs
+        run: npm run verify
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

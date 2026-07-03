@@ -1,0 +1,56 @@
+---
+title: Getting started
+description: Open a store and read its metadata.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+In real code you open a store from a URL:
+
+```ts
+import { openDataset, fromHttp } from "xarray-ts";
+
+const ds = await openDataset(fromHttp("https://example.com/data.zarr"));
+```
+
+In these docs we use `makeDemoStore()` instead — a hermetic zarr v3 store built
+in memory, so every cell runs offline. It is otherwise identical to a real
+store: `openDataset` accepts any zarrita `Readable`, including a plain `Map`.
+
+## Open a dataset
+
+<RunnableCell
+  title="Open the demo store"
+  code={`const ds = await openDataset(await makeDemoStore());
+ds`}
+/>
+
+A `Dataset` is pure metadata until you ask for values. Read its shape,
+attributes and coordinates synchronously:
+
+<RunnableCell
+  title="Inspect metadata"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+console.log("dims:", ds.dims);
+console.log("attrs:", ds.attrs);
+console.log("data variables:", Object.keys(ds.data_vars));
+console.log("coordinates:", Object.keys(ds.coords));`}
+/>
+
+## Pull a slice
+
+Data variables and selections stay lazy — nothing is fetched until you call
+`.load()` (a zarrita `Chunk`) or `.values()` (just the `TypedArray`).
+
+<RunnableCell
+  title="Stream one time step"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const frame = await ds.get("temperature").isel({ time: 0 }).load();
+console.log("shape:", frame.shape);   // (y, x)
+frame.data;                            // the TypedArray for that slice`}
+/>
+
+Next: the [data model](/guide/data-model/) — how a `Dataset` decides what is a
+coordinate and what is a data variable.

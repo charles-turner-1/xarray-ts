@@ -1,0 +1,65 @@
+---
+title: Opening stores
+description: fromHttp, fromIcechunk, consolidated metadata, and explicit variables.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+`openDataset(store, options?)` accepts **any zarrita `Readable`** — a
+`FetchStore`, an `icechunk-js` store, an in-memory `Map`, or your own. Two
+helpers build the common ones.
+
+## Plain zarr v3 over HTTP
+
+```ts
+import { openDataset, fromHttp } from "xarray-ts";
+
+const ds = await openDataset(fromHttp("https://example.com/data.zarr"));
+```
+
+`fromHttp` wraps zarrita's `FetchStore`. `openZarr` is an alias of `openDataset`.
+
+## icechunk repositories
+
+`fromIcechunk` dynamically imports the optional `icechunk-js` peer dependency, so
+it only loads when you actually open a repo:
+
+```ts
+import { openDataset, fromIcechunk } from "xarray-ts";
+
+const store = await fromIcechunk("https://bucket.s3.amazonaws.com/repo");
+const ds = await openDataset(store);
+```
+
+## Enumerating variables
+
+To list a group's variables in a single fetch, `openDataset` uses **consolidated
+metadata** when present — xarray and icechunk write it by default. If a store has
+no consolidated metadata and cannot list its own children, pass the names
+explicitly with `{ variables }`.
+
+The cell below builds the demo store **without** consolidated metadata, so it
+relies on an explicit variable list — exactly the fallback path:
+
+<RunnableCell
+  title="Explicit variable list"
+  code={`// makeDemoStore({ consolidated: false }) omits consolidated metadata.
+const store = await makeDemoStore({ consolidated: false });
+
+const ds = await openDataset(store, {
+  variables: ["time", "x", "y", "temperature"],
+});
+console.log("dims:", ds.dims);
+console.log("variables:", Object.keys(ds.variables));`}
+/>
+
+## Options
+
+`OpenOptions` also accepts:
+
+- **`path`** — open a single group at a sub-path within the store.
+- **`consolidated`** — force-enable or disable use of consolidated metadata.
+
+See the [API reference](/api/readme/) for the full `OpenOptions` type.
+
+Next: [nested groups](/guide/nested-groups/).

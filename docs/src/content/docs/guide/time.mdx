@@ -1,0 +1,44 @@
+---
+title: CF time decoding
+description: Decode CF time axes to JavaScript Dates.
+---
+
+import RunnableCell from "@components/RunnableCell.astro";
+
+Coordinates whose `units` attribute looks like `"<unit> since <reference>"`
+(e.g. `"days since 2000-01-01"`) are recognised as **time axes** and decoded at
+open. For a decoded time coordinate, `coord.values` holds **epoch milliseconds**
+(not the raw `days since …` numbers), and `coord.dates()` gives you a `Date[]`.
+
+Decoding applies only to **standard / proleptic-Gregorian** calendars. Non-standard
+calendars (`noleap`, `360_day`, …) are left raw and flagged with
+`coord.decoded === false`, so you never get silently-wrong dates.
+
+## Decoding a time axis
+
+The demo store's `time` coordinate is `"days since 2000-01-01"`.
+
+<RunnableCell
+  title="time.dates()"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+const time = ds.coords.time;
+console.log("isTime:", time.isTime);
+console.log("decoded:", time.decoded);
+// Decoded time values are epoch milliseconds:
+console.log("values (epoch ms):", Array.from(time.values));
+console.log("as Dates:", time.dates());`}
+/>
+
+`dates()` returns `undefined` when a coordinate is not a decodable time axis, so
+it is safe to call on any coordinate:
+
+<RunnableCell
+  title="dates() on a non-time coordinate"
+  code={`const ds = await openDataset(await makeDemoStore());
+
+console.log("x is time:", ds.coords.x.isTime);   // false
+console.log("x.dates():", ds.coords.x.dates());  // undefined`}
+/>
+
+Next: [selection & indexing](/guide/selection/).
