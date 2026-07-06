@@ -160,3 +160,7 @@ ICECHUNK_TEST_URL=https://… npm test
 ## License
 
 Apache 2.0, see [LICENSE](LICENSE).
+
+`xarray-ts` is a TypeScript reimplementation of parts of the `xarray` data model. It uses Apache-2.0 for license congruence with [`pydata/xarray`](https://github.com/pydata/xarray), which is also Apache-2.0.
+
+This is an independent project and is not affiliated with or endorsed by the xarray maintainers.
