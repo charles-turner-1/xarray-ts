@@ -20,6 +20,27 @@ open, following a **primitives-plus-sidecar** model:
   datetimes, available as the sidecar `coord.cftimes()`. `coord.calendar` names
   the resolved calendar.
 
+:::danger[`coord.values` means different things on different calendars]
+`values` is **not** a uniform "decoded time" the way it is in Python xarray.
+Its meaning **depends on the calendar**:
+
+- **standard / gregorian / proleptic_gregorian** → **epoch milliseconds**
+  (unit-normalised; `dates()` gives `Date[]`).
+- **any other calendar** (`360_day`, `noleap`, `julian`, …) → the **raw encoded
+  numbers straight from the file** (e.g. `[0, 30, 60, 90]`), and
+  `decoded === false`.
+
+If you grab `.values` to build a time axis and feed it a `360_day` coordinate,
+you get raw offsets, **not** timestamps — and nothing throws. The axis is just
+silently wrong.
+
+**`cftimes()` is the one accessor that is correct for every calendar** (it is
+populated for standard calendars too). Reach for `cftimes()` — not `values` —
+whenever you want the actual dates and can't guarantee a standard calendar.
+Branch on `coord.decoded` / `coord.calendar` if you must touch `values`
+directly.
+:::
+
 ## Decoding a time axis
 
 The demo store's `time` coordinate is `"days since 2000-01-01"`.
