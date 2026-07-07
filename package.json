@@ -1,6 +1,6 @@
 {
   "name": "xarray-ts",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "A minimal, read-only xarray metadata layer for zarr v3 / icechunk in the browser",
   "type": "module",
   "license": "Apache-2.0",
