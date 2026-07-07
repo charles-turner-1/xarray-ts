@@ -11,6 +11,7 @@
  *
  * @module
  */
+import type { CFDatetime } from "cftime-ts";
 import * as zarr from "zarrita";
 import { decodeTime, isTimeUnits } from "./decode/time.js";
 import type { AnyCoord, Coord, LazyCoord, Variable } from "./types.js";
@@ -114,7 +115,7 @@ export async function loadCoord(v: Variable): Promise<Coord> {
 
   if (isTime) {
     const decoded = decodeTime(raw as Array<number | bigint>, v.attrs);
-    return makeCoord(v, decoded.values, true, decoded.decoded);
+    return makeCoord(v, decoded.values, true, decoded.decoded, decoded.calendar, decoded.cftimes);
   }
   return makeCoord(v, raw, false, false);
 }
@@ -126,6 +127,7 @@ export async function loadCoord(v: Variable): Promise<Coord> {
  */
 export function renameCoord(coord: Coord, name: string, dimRenames: Record<string, string>): Coord {
   const values = coord.values;
+  const cftimes = coord.cftimes();
   return {
     ...coord,
     name,
@@ -133,6 +135,9 @@ export function renameCoord(coord: Coord, name: string, dimRenames: Record<strin
     dates(): Date[] | undefined {
       if (!coord.isTime || !coord.decoded) return undefined;
       return (values as number[]).map((ms) => new Date(ms));
+    },
+    cftimes(): (CFDatetime | null)[] | undefined {
+      return cftimes;
     },
   };
 }
@@ -162,6 +167,8 @@ function makeCoord(
   values: ReadonlyArray<number | bigint | string | boolean>,
   isTime: boolean,
   decoded: boolean,
+  calendar?: string,
+  cftimes?: (CFDatetime | null)[],
 ): Coord {
   return {
     name: v.name,
@@ -171,9 +178,13 @@ function makeCoord(
     values,
     isTime,
     decoded,
+    ...(calendar !== undefined ? { calendar } : {}),
     dates(): Date[] | undefined {
       if (!isTime || !decoded) return undefined;
       return (values as number[]).map((ms) => new Date(ms));
+    },
+    cftimes(): (CFDatetime | null)[] | undefined {
+      return cftimes;
     },
   };
 }

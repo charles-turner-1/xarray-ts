@@ -3,6 +3,7 @@
  *
  * @module
  */
+import { CFDatetime, date2num, parseDate, type InputCalendar } from "cftime-ts";
 import type * as zarr from "zarrita";
 import type { Coord, Label, LabelSlice, SelOptions, SliceArg } from "./types.js";
 
@@ -12,6 +13,7 @@ export function isLabelSlice(label: unknown): label is LabelSlice {
     typeof label === "object" &&
     label !== null &&
     !(label instanceof Date) &&
+    !(label instanceof CFDatetime) &&
     ("start" in label || "stop" in label)
   );
 }
@@ -62,20 +64,62 @@ export function resolveSlice(s: zarr.Slice, size: number): ResolvedSlice {
   return { start, stop, step, length };
 }
 
+/**
+ * Encode a label into a **non-standard** CF calendar coordinate's raw numeric
+ * space (the space its `values` live in), using `cftime-ts`. A `CFDatetime` or
+ * ISO string is converted through `date2num`; a bare number is assumed to be an
+ * already-encoded value.
+ */
+function cfLabelToValue(label: Label, coord: Coord): number {
+  const units = typeof coord.attrs["units"] === "string" ? coord.attrs["units"] : "";
+  const calendar = (coord.calendar ?? "standard") as InputCalendar;
+  if (typeof label === "number") return label;
+  let dt: CFDatetime;
+  if (label instanceof CFDatetime) {
+    dt = label;
+  } else if (typeof label === "string") {
+    const [year, month, day, hour, minute, second, microsecond] = parseDate(label);
+    dt = new CFDatetime(year, month, day, hour, minute, second, microsecond, { calendar });
+  } else if (label instanceof Date) {
+    throw new Error(
+      `xarray-ts: a JS Date is ambiguous on the non-standard calendar coordinate ` +
+        `"${coord.name}" (${calendar}); pass a CFDatetime or an ISO string instead.`,
+    );
+  } else {
+    throw new Error(
+      `xarray-ts: label ${JSON.stringify(label)} is not valid on the non-standard calendar ` +
+        `coordinate "${coord.name}" (pass a CFDatetime, ISO string, or encoded number).`,
+    );
+  }
+  return date2num(dt, units, { calendar });
+}
+
 /** Coerce a label to a comparable value: time labels (Date/ISO/ms) become epoch ms. */
 function labelToValue(label: Label, coord: Coord): number | bigint | string | boolean {
   if (coord.isTime) {
+    // Non-standard CF calendar (e.g. 360_day): `values` are raw encoded numbers,
+    // so map the label into that space via cftime-ts rather than epoch-ms.
+    if (!coord.decoded && coord.cftimes()) {
+      return cfLabelToValue(label, coord);
+    }
+    // Standard/proleptic calendar: `values` are epoch milliseconds.
     if (label instanceof Date) return label.getTime();
     if (typeof label === "string") {
       const ms = Date.parse(label);
       if (Number.isNaN(ms)) throw new Error(`xarray-ts: cannot parse time label "${label}"`);
       return ms;
     }
+    if (label instanceof CFDatetime) {
+      throw new Error(
+        `xarray-ts: a CFDatetime label is only valid on a non-standard CF calendar coordinate ` +
+          `("${coord.name}" uses a standard/proleptic calendar; pass a Date, ISO string, or epoch ms).`,
+      );
+    }
     return Number(label);
   }
-  if (label instanceof Date) {
+  if (label instanceof Date || label instanceof CFDatetime) {
     throw new Error(
-      `xarray-ts: a Date label is only valid on a time coordinate (got "${coord.name}").`,
+      `xarray-ts: a Date/CFDatetime label is only valid on a time coordinate (got "${coord.name}").`,
     );
   }
   return label;

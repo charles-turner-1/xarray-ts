@@ -3,6 +3,7 @@
  *
  * @module
  */
+import type { CFDatetime } from "cftime-ts";
 import type * as zarr from "zarrita";
 
 /** Any zarrita store we can read from (icechunk-js, FetchStore, an in-memory Map, ...). */
@@ -56,19 +57,33 @@ export interface Coord {
   readonly attrs: Attrs;
   readonly dtype: zarr.DataType;
   /**
-   * The loaded values. For time coordinates this is epoch-milliseconds when
-   * {@link Coord.decoded} is `true`; otherwise the raw stored values.
+   * The loaded values — always **primitive** (the *primitives-plus-sidecar*
+   * model). For time coordinates this is epoch-milliseconds when
+   * {@link Coord.decoded} is `true`, otherwise the raw stored (CF-encoded)
+   * numbers. Calendar-aware decoded objects live in {@link Coord.cftimes}, not
+   * here.
    */
   readonly values: ReadonlyArray<number | bigint | string | boolean>;
   /** Whether this coordinate is a CF time axis (`units = "<unit> since <ref>"`). */
   readonly isTime: boolean;
   /**
-   * For time coordinates, whether decoding succeeded. `false` means a
-   * non-standard calendar was encountered and {@link Coord.values} are raw.
+   * For time coordinates, whether epoch-ms/`Date` decoding succeeded. `false`
+   * means a non-standard calendar was encountered and {@link Coord.values} are
+   * raw — use {@link Coord.cftimes} for calendar-aware datetimes.
    */
   readonly decoded: boolean;
+  /** The resolved CF calendar name for a time coordinate (e.g. `"360_day"`). */
+  readonly calendar?: string;
   /** Convenience: time values as `Date[]` (only when `isTime && decoded`). */
   dates(): Date[] | undefined;
+  /**
+   * Calendar-aware datetimes for *any* recognised CF calendar (all nine),
+   * decoded via `cftime-ts` — the sidecar for non-standard calendars such as
+   * `360_day` or `noleap`. `undefined` when this is not a time axis, or when the
+   * units/calendar are not recognised by `cftime-ts`. Non-finite values within
+   * the array decode to `null`.
+   */
+  cftimes(): (CFDatetime | null)[] | undefined;
 }
 
 /**
@@ -114,8 +129,12 @@ export interface SliceArg {
 /** Positional selection: a mapping of dimension name to an {@link IselIndexer}. */
 export type IselSelection = Record<string, IselIndexer>;
 
-/** A coordinate label used by `.sel`: a number, a `Date`/ISO string (time axes), bigint, boolean, or string. */
-export type Label = number | bigint | string | boolean | Date;
+/**
+ * A coordinate label used by `.sel`: a number, a `Date`/ISO string (standard
+ * time axes), a `CFDatetime` (non-standard CF calendars), bigint, boolean, or
+ * string.
+ */
+export type Label = number | bigint | string | boolean | Date | CFDatetime;
 
 /** A label range used by `.sel` (inclusive of both endpoints, mirroring xarray). */
 export interface LabelSlice {

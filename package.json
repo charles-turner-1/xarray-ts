@@ -46,6 +46,7 @@
     "ndarray"
   ],
   "dependencies": {
+    "cftime-ts": "^0.1.1",
     "zarrita": "^0.7.3"
   },
   "peerDependencies": {

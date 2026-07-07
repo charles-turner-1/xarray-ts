@@ -1,15 +1,24 @@
 /**
- * Minimal CF time-axis decoding.
+ * CF time-axis decoding.
  *
  * Decodes coordinates whose `units` follow the CF convention
- * `"<unit> since <reference date>"` (e.g. `"days since 2000-01-01"`) into epoch
- * milliseconds. Only the calendars that coincide with JS `Date` (the proleptic
- * Gregorian calendar — `standard`, `gregorian`, `proleptic_gregorian`) are
- * decoded; non-standard calendars (`noleap`, `360_day`, ...) are left raw and
- * flagged, rather than silently producing wrong dates.
+ * `"<unit> since <reference date>"` (e.g. `"days since 2000-01-01"`).
+ *
+ * Two decodings run side by side, following the *primitives-plus-sidecar* model:
+ *
+ * - **epoch milliseconds** ({@link DecodedTime.values} with `decoded: true`) for
+ *   the calendars that coincide with JS `Date` (the proleptic Gregorian
+ *   calendar — `standard`, `gregorian`, `proleptic_gregorian`). Non-standard
+ *   calendars (`noleap`, `360_day`, ...) keep their raw encoded numbers and are
+ *   flagged `decoded: false`, rather than silently producing wrong `Date`s.
+ * - **calendar-aware datetimes** ({@link DecodedTime.cftimes}) via `cftime-ts`
+ *   for *every* CF calendar it recognises (all nine, including the non-standard
+ *   ones). This is the sidecar that lets consumers work with, e.g., a `360_day`
+ *   axis; `values` stays primitive.
  *
  * @module
  */
+import { num2date, type CFDatetime, type InputCalendar } from "cftime-ts";
 import type { Attrs } from "../types.js";
 
 /** Milliseconds per supported CF time unit. */
@@ -91,27 +100,52 @@ function parseReference(ref: string): number | undefined {
 export interface DecodedTime {
   /** Epoch-millisecond values when `decoded`, otherwise the raw input as numbers. */
   values: number[];
-  /** Whether decoding succeeded (recognised units + standard calendar). */
+  /** Whether epoch-ms/`Date` decoding succeeded (recognised units + standard calendar). */
   decoded: boolean;
+  /** Resolved CF calendar name (lower-cased; defaults to `"standard"`). */
+  calendar: string;
+  /**
+   * Calendar-aware datetimes decoded via `cftime-ts` for *any* CF calendar it
+   * recognises (all nine). `undefined` when the units/calendar are unrecognised
+   * — e.g. `"weeks since ..."`, which our epoch-ms path supports but `cftime-ts`
+   * does not. Non-finite raw values decode to `null` within the array.
+   */
+  cftimes?: (CFDatetime | null)[];
 }
 
 /**
- * Decode raw time-coordinate values to epoch milliseconds.
+ * Decode raw time-coordinate values.
  *
- * Returns `decoded: false` (and passes values through as numbers) when the
- * units are unrecognised or the calendar is non-standard.
+ * Produces epoch-millisecond {@link DecodedTime.values} (with `decoded: true`)
+ * for standard calendars; other calendars keep raw numeric values and
+ * `decoded: false`. In parallel, {@link DecodedTime.cftimes} carries calendar-
+ * aware `cftime-ts` datetimes for every recognised CF calendar (the sidecar used
+ * by `Coord.cftimes()`).
  */
 export function decodeTime(raw: ReadonlyArray<number | bigint>, attrs: Attrs): DecodedTime {
   const calendar =
     typeof attrs["calendar"] === "string" ? attrs["calendar"].toLowerCase() : "standard";
   const units = typeof attrs["units"] === "string" ? attrs["units"] : "";
+
+  // Calendar-aware sidecar via cftime-ts, for every calendar it understands.
+  // `num2date` throws on unrecognised units/calendars (e.g. "weeks since ...");
+  // treat that as "no cftime decoding available" rather than a hard failure.
+  let cftimes: (CFDatetime | null)[] | undefined;
+  try {
+    cftimes = num2date(raw.map(Number), units, { calendar: calendar as InputCalendar });
+  } catch {
+    cftimes = undefined;
+  }
+
   const parsed = parseTimeUnits(units);
   if (!parsed || !STANDARD_CALENDARS.has(calendar)) {
-    return { values: raw.map(Number), decoded: false };
+    return { values: raw.map(Number), decoded: false, calendar, cftimes };
   }
   const { unitMs, referenceMs } = parsed;
   return {
     values: raw.map((v) => referenceMs + Number(v) * unitMs),
     decoded: true,
+    calendar,
+    cftimes,
   };
 }

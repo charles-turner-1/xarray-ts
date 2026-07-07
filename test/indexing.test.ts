@@ -1,7 +1,8 @@
+import { CFDatetime } from "cftime-ts";
 import { describe, expect, it } from "vitest";
-import { openDataset } from "../src/index.js";
+import { isLazyCoord, openDataset } from "../src/index.js";
 import type { Chunk } from "../src/index.js";
-import { makeDemoStore } from "./fixtures.js";
+import { make360DayStore, makeDemoStore } from "./fixtures.js";
 
 // temperature is row-major over (time, y, x): value at (t, y, x) = t*8 + y*4 + x.
 
@@ -67,6 +68,56 @@ describe("DataArray.sel", () => {
   it("throws on an absent exact label", async () => {
     const ds = await openDataset(await makeDemoStore());
     expect(() => ds.get("temperature").isel({ time: 0 }).sel({ y: 15 })).toThrow(/not found/);
+  });
+});
+
+describe("DataArray.sel on a non-standard (360_day) calendar", () => {
+  it("exposes calendar-aware cftimes and a raw, undecoded coordinate", async () => {
+    const ds = await openDataset(await make360DayStore());
+    const time = ds.coords["time"]!;
+    if (isLazyCoord(time)) throw new Error("expected an eager time coordinate");
+    expect(time.isTime).toBe(true);
+    expect(time.decoded).toBe(false); // no JS Date for 360_day
+    expect(time.calendar).toBe("360_day");
+    expect(time.dates()).toBeUndefined();
+    expect(time.values).toEqual([0, 30, 60, 90]); // raw encoded numbers
+    expect(time.cftimes()?.map((d) => [d?.year, d?.month, d?.day])).toEqual([
+      [2000, 1, 1],
+      [2000, 2, 1],
+      [2000, 3, 1],
+      [2000, 4, 1],
+    ]);
+  });
+
+  it("resolves an exact CFDatetime label", async () => {
+    const ds = await openDataset(await make360DayStore());
+    const label = new CFDatetime(2000, 3, 1, 0, 0, 0, 0, { calendar: "360_day" });
+    const value = await ds.get("tas").sel({ time: label }).values();
+    expect(value).toBe(282); // index 2
+  });
+
+  it("resolves an exact ISO string label", async () => {
+    const ds = await openDataset(await make360DayStore());
+    const value = await ds.get("tas").sel({ time: "2000-02-01" }).values();
+    expect(value).toBe(281); // index 1
+  });
+
+  it("snaps to the nearest CFDatetime with method: 'nearest'", async () => {
+    const ds = await openDataset(await make360DayStore());
+    // 2000-03-10 (360_day) is nearer to 2000-03-01 (offset 60) than 2000-04-01 (90).
+    const label = new CFDatetime(2000, 3, 10, 0, 0, 0, 0, { calendar: "360_day" });
+    const value = await ds.get("tas").sel({ time: label }, { method: "nearest" }).values();
+    expect(value).toBe(282); // index 2
+  });
+
+  it("slices a CFDatetime label range (endpoints inclusive)", async () => {
+    const ds = await openDataset(await make360DayStore());
+    const start = new CFDatetime(2000, 2, 1, 0, 0, 0, 0, { calendar: "360_day" });
+    const stop = new CFDatetime(2000, 3, 1, 0, 0, 0, 0, { calendar: "360_day" });
+    const da = ds.get("tas").sel({ time: { start, stop } });
+    expect(da.shape).toEqual([2]);
+    const chunk = (await da.load()) as Chunk;
+    expect([...chunk.data]).toEqual([281, 282]);
   });
 });
 

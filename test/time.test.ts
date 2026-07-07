@@ -41,5 +41,44 @@ describe("CF time decoding", () => {
     });
     expect(decoded.decoded).toBe(false);
     expect(decoded.values).toEqual([0, 1]);
+    expect(decoded.calendar).toBe("360_day");
+  });
+
+  it("decodes non-standard calendars into cftime datetimes (sidecar)", () => {
+    // Under 360_day every month has 30 days: 0, 30, 60 -> 1 Jan/Feb/Mar 2000.
+    const decoded = decodeTime([0, 30, 60], {
+      units: "days since 2000-01-01",
+      calendar: "360_day",
+    });
+    expect(decoded.decoded).toBe(false);
+    expect(decoded.cftimes).toBeDefined();
+    expect(decoded.cftimes?.map((d) => [d?.year, d?.month, d?.day])).toEqual([
+      [2000, 1, 1],
+      [2000, 2, 1],
+      [2000, 3, 1],
+    ]);
+  });
+
+  it("also populates cftimes for standard calendars", () => {
+    const decoded = decodeTime([0, 1], {
+      units: "days since 2000-01-01",
+      calendar: "standard",
+    });
+    expect(decoded.decoded).toBe(true);
+    expect(decoded.values).toEqual([Date.UTC(2000, 0, 1), Date.UTC(2000, 0, 2)]);
+    expect(decoded.cftimes?.map((d) => [d?.year, d?.month, d?.day])).toEqual([
+      [2000, 1, 1],
+      [2000, 1, 2],
+    ]);
+  });
+
+  it("leaves cftimes undefined for units cftime-ts cannot parse", () => {
+    // "weeks" decodes via our epoch-ms path but is not a cftime-ts unit.
+    const decoded = decodeTime([0, 1], {
+      units: "weeks since 2000-01-01",
+      calendar: "standard",
+    });
+    expect(decoded.decoded).toBe(true);
+    expect(decoded.cftimes).toBeUndefined();
   });
 });
