@@ -74,9 +74,14 @@ Any zarrita `Readable` store is accepted, so `openDataset(store)` works with
   — not read at open, materialised on demand via `await ds.coords.lat.load()`. Data
   variables stay lazy too. Use `isLazyCoord(coord)` to tell the two apart.
 - **CF time decoding** — coordinates with `units = "<unit> since <reference>"`
-  are decoded to epoch milliseconds (and `Date[]` via `coord.dates()`). Only
-  standard / proleptic-Gregorian calendars are decoded; non-standard calendars
-  (`noleap`, `360_day`, …) are left raw and flagged (`coord.decoded === false`).
+  are decoded following a _primitives-plus-sidecar_ model. `coord.values` stays
+  primitive: epoch milliseconds for standard / proleptic-Gregorian calendars
+  (with `Date[]` via `coord.dates()`), or the raw encoded numbers otherwise
+  (`coord.decoded === false`). Every recognised CF calendar — including
+  non-standard ones like `noleap` and `360_day` — is additionally decoded into
+  calendar-aware [`cftime-ts`](https://github.com/charles-turner-1/cftime-ts)
+  datetimes via `coord.cftimes()`, and can be selected with `.sel()` using a
+  `CFDatetime` or ISO string. `coord.calendar` names the resolved calendar.
 
 It deliberately does **not** apply `scale_factor` / `add_offset` / `_FillValue`
 masking, and does not implement computation, alignment, or writing.
@@ -144,7 +149,7 @@ import { datasetFromGroup, type GroupNode } from "xarray-ts";
 | `fromHttp(url, opts?)`                             | Open a plain zarr v3 store over HTTP (`FetchStore`).                                                                                                       |
 | `Dataset`                                          | `dims`, `coords`, `data_vars`, `variables`, `attrs`, `get`, `dropVars`, `pickVars`, `renameVars`, `renameDims`, `setCoords`, `resetCoords`, `isel`, `sel`. |
 | `DataArray`                                        | `dims`, `shape`, `coords`, `attrs`, `dtype`, `rename`, `isel`, `sel`, `load`, `values`.                                                                    |
-| `Coord`                                            | Eager dimension coordinate: `values`, `dims`, `attrs`, `isTime`, `decoded`, `dates()`.                                                                     |
+| `Coord`                                            | Eager dimension coordinate: `values`, `dims`, `attrs`, `isTime`, `decoded`, `calendar`, `dates()`, `cftimes()`.                                            |
 | `LazyCoord`                                        | Lazy auxiliary / N-d coordinate: `dims`, `attrs`, `isTime`, `load()`, `values()`. Narrow with `isLazyCoord`.                                               |
 | `datasetFromGroup`, `childArrayNames`, `GroupNode` | The nested-group seam.                                                                                                                                     |
 | `openDatatree`                                     | Stub (throws `NotImplementedError`).                                                                                                                       |

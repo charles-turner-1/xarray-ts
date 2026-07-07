@@ -1,18 +1,24 @@
 ---
 title: CF time decoding
-description: Decode CF time axes to JavaScript Dates.
+description: Decode CF time axes to JavaScript Dates and calendar-aware cftime datetimes.
 ---
 
 import RunnableCell from "@components/RunnableCell.astro";
 
 Coordinates whose `units` attribute looks like `"<unit> since <reference>"`
 (e.g. `"days since 2000-01-01"`) are recognised as **time axes** and decoded at
-open. For a decoded time coordinate, `coord.values` holds **epoch milliseconds**
-(not the raw `days since …` numbers), and `coord.dates()` gives you a `Date[]`.
+open, following a **primitives-plus-sidecar** model:
 
-Decoding applies only to **standard / proleptic-Gregorian** calendars. Non-standard
-calendars (`noleap`, `360_day`, …) are left raw and flagged with
-`coord.decoded === false`, so you never get silently-wrong dates.
+- `coord.values` stays **primitive**. For **standard / proleptic-Gregorian**
+  calendars it holds **epoch milliseconds** (not the raw `days since …` numbers),
+  and `coord.dates()` gives you a `Date[]`. For other calendars it holds the raw
+  encoded numbers and `coord.decoded === false`, so you never get silently-wrong
+  `Date`s.
+- Every recognised CF calendar — including non-standard ones like `noleap` and
+  `360_day` that JS `Date` cannot represent — is additionally decoded into
+  calendar-aware [`cftime-ts`](https://github.com/charles-turner-1/cftime-ts)
+  datetimes, available as the sidecar `coord.cftimes()`. `coord.calendar` names
+  the resolved calendar.
 
 ## Decoding a time axis
 
@@ -40,5 +46,28 @@ it is safe to call on any coordinate:
 console.log("x is time:", ds.coords.x.isTime); // false
 console.log("x.dates():", ds.coords.x.dates()); // undefined`}
 />
+
+## Non-standard calendars
+
+For a calendar JS `Date` cannot represent (e.g. `360_day`, where every month has
+30 days), `dates()` is `undefined` and `values` are the raw encoded numbers — but
+`cftimes()` still gives you calendar-aware datetimes, and you can select with a
+`CFDatetime` or an ISO string:
+
+```ts
+import { openDataset, CFDatetime } from "xarray-ts";
+
+const ds = await openDataset(store); // a 360_day "days since 2000-01-01" axis
+
+const time = ds.coords.time;
+time.decoded; // false — no JS Date for 360_day
+time.calendar; // "360_day"
+time.cftimes()?.map((d) => d?.isoformat()); // ["2000-01-01...", "2000-02-01...", ...]
+
+// Select by a calendar-aware datetime or an ISO string:
+const label = new CFDatetime(2000, 3, 1, 0, 0, 0, 0, { calendar: "360_day" });
+await ds.get("tas").sel({ time: label }).values();
+await ds.get("tas").sel({ time: "2000-02-01" }).values();
+```
 
 Next: [selection & indexing](/guide/selection/).

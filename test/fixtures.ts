@@ -52,6 +52,42 @@ export async function makeDemoStore(opts: { consolidated?: boolean } = {}): Prom
 }
 
 /**
+ * A store with a **non-standard** CF calendar (`360_day`) time coordinate, for
+ * exercising `cftime-ts` decoding and label selection on calendars JS `Date`
+ * cannot represent. Under `360_day` every month has 30 days, so the raw offsets
+ * decode to the first of Jan/Feb/Mar/Apr 2000:
+ *   dims      time=4
+ *   coords    time (CF "days since 2000-01-01", calendar 360_day = [0,30,60,90])
+ *   data_vars tas(time)  (=[280,281,282,283])
+ */
+export async function make360DayStore(): Promise<MapStore> {
+  const store: MapStore = new Map();
+  await zarr.create(zarr.root(store), {});
+
+  await writeArray(
+    store,
+    "time",
+    "float64",
+    [4],
+    ["time"],
+    { units: "days since 2000-01-01", calendar: "360_day" },
+    Float64Array.from([0, 30, 60, 90]),
+  );
+  await writeArray(
+    store,
+    "tas",
+    "float32",
+    [4],
+    ["time"],
+    { units: "K" },
+    Float32Array.from([280, 281, 282, 283]),
+  );
+
+  consolidate(store);
+  return store;
+}
+
+/**
  * A store with a size-1 dimension (and its dimension coordinate), for exercising
  * `squeeze`:
  *   dims      time=3, level=1, y=2

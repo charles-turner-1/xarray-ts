@@ -28,6 +28,11 @@ export { datasetFromGroup, childArrayNames, type GroupNode } from "./group.js";
 export { isLazyCoord } from "./coords.js";
 export { NotImplementedError, EnumerationError } from "./errors.js";
 
+// Re-exported as a value (the class), not just a type: `.sel()` accepts a
+// `CFDatetime` label on non-standard CF calendars, so consumers need to be able
+// to construct one without depending on `cftime-ts` directly.
+export { CFDatetime } from "cftime-ts";
+
 export type {
   AnyCoord,
   Attrs,
