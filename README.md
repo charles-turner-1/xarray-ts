@@ -8,7 +8,7 @@
 
 A minimal, read-only **xarray metadata layer** for zarr v3 / icechunk in the browser.
 
-`xarray-ts` reinterprets the zarr arrays produced by serialising an xarray
+`xarray-ts` reinterprets the zarr stores produced by serialising an xarray
 `Dataset` (e.g. to an [icechunk](https://icechunk.io) store) into an
 xarray-shaped object — dimensions, coordinates, data variables, attributes —
 that view layers can introspect, while streaming actual slices on demand through
