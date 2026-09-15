@@ -5,6 +5,9 @@
  * @module
  */
 import { applyIndexer, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
+import * as ir from "./codegen/ir.js";
+import type { Op } from "./codegen/ir.js";
+import { emit, renderPython, type RenderOptions } from "./codegen/emit.js";
 import { isDimensionCoord, isLazyCoord, makeLazyCoord, renameCoord } from "./coords.js";
 import { DataArray } from "./dataarray.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
@@ -47,8 +50,10 @@ export class Dataset {
   readonly #dimSizes: Map<string, number>;
   /** @internal Cumulative selection per dimension (relative to original axes). */
   readonly #axesByDim: Map<string, AxisSel>;
+  /** @internal The operation log recording how this Dataset was derived (for codegen). */
+  readonly #ops: readonly Op[];
 
-  constructor(parts: DatasetParts, axesByDim?: Map<string, AxisSel>) {
+  constructor(parts: DatasetParts, axesByDim?: Map<string, AxisSel>, ops: readonly Op[] = []) {
     this.attrs = parts.attrs;
     this.#vars = parts.vars;
     this.#rootCoords = parts.coords;
@@ -57,6 +62,25 @@ export class Dataset {
     this.#dimSizes = computeDimSizes(parts.vars);
     this.#axesByDim =
       axesByDim ?? new Map([...this.#dimSizes].map(([dim, size]) => [dim, fullAxis(size)]));
+    this.#ops = ops;
+  }
+
+  /**
+   * The recorded operation log — the transformations applied since the store was
+   * opened, from which {@link Dataset.toPython} generates equivalent xarray code.
+   */
+  get ops(): readonly Op[] {
+    return this.#ops;
+  }
+
+  /**
+   * Generate the xarray Python that reproduces this Dataset from its store.
+   *
+   * Each recorded operation emits its literal xarray call (see `CLAUDE.md`), so
+   * the output is copy-pasteable code that yields the same result in xarray.
+   */
+  toPython(options?: RenderOptions): string {
+    return renderPython(emit(this.#ops), options);
   }
 
   /** Mapping of dimension name to its current size. */
@@ -106,7 +130,7 @@ export class Dataset {
     if (!this.#vars.has(name)) {
       throw new Error(`xarray-ts: no variable named "${name}" in Dataset.`);
     }
-    return this.#dataArray(name);
+    return this.#dataArray(name, ir.append(this.#ops, ir.project(name)));
   }
 
   /**
@@ -132,12 +156,12 @@ export class Dataset {
       if (isVar) varRenames[oldName] = newName;
       if (isDim) dimRenames[oldName] = newName;
     }
-    return this.#renamed(varRenames, dimRenames);
+    return this.#renamed(varRenames, dimRenames, ir.rename("rename", names));
   }
 
   /** Rename variables/coordinates without touching underlying data values. */
   renameVars(names: Record<string, string>): Dataset {
-    return this.#renamed(names, {});
+    return this.#renamed(names, {}, ir.rename("rename_vars", names));
   }
 
   /**
@@ -149,7 +173,7 @@ export class Dataset {
     for (const [oldDim, newDim] of Object.entries(names)) {
       if (this.#coordNames.has(oldDim)) varRenames[oldDim] = newDim;
     }
-    return this.#renamed(varRenames, names);
+    return this.#renamed(varRenames, names, ir.rename("rename_dims", names));
   }
 
   /**
@@ -162,7 +186,7 @@ export class Dataset {
     for (const name of this.#vars.keys()) {
       if (!drop.has(name)) keep.add(name);
     }
-    return this.#subset(keep);
+    return this.#subset(keep, ir.drop(drop));
   }
 
   /**
@@ -175,6 +199,9 @@ export class Dataset {
    */
   pickVars(names: Iterable<string>): Dataset {
     const keep = this.#validatedNames(names);
+    // Record the user's picked names verbatim — xarray's `ds[[names]]` keeps the
+    // associated coordinates itself, exactly as the expansion below does.
+    const picked = [...keep];
 
     const neededDims = new Set<string>();
     for (const name of keep) {
@@ -188,7 +215,7 @@ export class Dataset {
       }
     }
 
-    return this.#subset(keep);
+    return this.#subset(keep, ir.pick(picked));
   }
 
   /**
@@ -209,7 +236,7 @@ export class Dataset {
       coordNames.add(name);
       dataVarNames.delete(name);
     }
-    return this.#reclassified(coordNames, dataVarNames);
+    return this.#reclassified(coordNames, dataVarNames, this.#vars, ir.setCoords(promote));
   }
 
   /**
@@ -247,7 +274,12 @@ export class Dataset {
         dataVarNames.add(name);
       }
     }
-    return this.#reclassified(coordNames, dataVarNames, vars);
+    return this.#reclassified(
+      coordNames,
+      dataVarNames,
+      vars,
+      ir.resetCoords(names === undefined ? undefined : reset, opts.drop),
+    );
   }
 
   /**
@@ -317,19 +349,20 @@ export class Dataset {
       axesByDim.set(dims[oldDim] ?? oldDim, axis);
     }
 
-    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+    return new Dataset(
+      { vars, coords, coordNames, dataVarNames, attrs: this.attrs },
+      axesByDim,
+      ir.append(this.#ops, ir.swapDims(dims)),
+    );
   }
 
   /** Positional selection across the whole Dataset (xarray `Dataset.isel`). */
   isel(selection: IselSelection): Dataset {
-    const axes = new Map(this.#axesByDim);
-    for (const [dim, indexer] of Object.entries(selection)) {
-      if (!axes.has(dim)) {
-        throw new Error(`xarray-ts: Dataset has no dimension "${dim}".`);
-      }
-      axes.set(dim, applyIndexer(axes.get(dim)!, indexer, dim));
-    }
-    return new Dataset(this.#parts(), axes);
+    return new Dataset(
+      this.#parts(),
+      this.#iselAxes(selection),
+      ir.append(this.#ops, ir.select("isel", selection)),
+    );
   }
 
   /** Label-based selection across the whole Dataset (xarray `Dataset.sel`). */
@@ -351,7 +384,12 @@ export class Dataset {
         ? toSliceArg(lookupLabelSlice(coord, label))
         : lookupLabel(coord, label, opts);
     }
-    return this.isel(positional);
+    // Record the `sel` verbatim (labels + options), not the lowered positional isel.
+    return new Dataset(
+      this.#parts(),
+      this.#iselAxes(positional),
+      ir.append(this.#ops, ir.select("sel", selection, opts.method ? opts : undefined)),
+    );
   }
 
   /**
@@ -381,7 +419,12 @@ export class Dataset {
         );
       }
     }
-    return this.isel(Object.fromEntries(targets.map((d) => [d, 0])));
+    const positional = Object.fromEntries(targets.map((d) => [d, 0]));
+    return new Dataset(
+      this.#parts(),
+      this.#iselAxes(positional),
+      ir.append(this.#ops, ir.squeeze(dim)),
+    );
   }
 
   /**
@@ -426,11 +469,27 @@ export class Dataset {
     return lines.join("\n");
   }
 
+  /**
+   * @internal Positional axes after applying `selection` to the current ones — the
+   * shared axis-folding for `isel`/`sel`/`squeeze` that records no op (so callers
+   * can record the verbatim call they were invoked as).
+   */
+  #iselAxes(selection: IselSelection): Map<string, AxisSel> {
+    const axes = new Map(this.#axesByDim);
+    for (const [dim, indexer] of Object.entries(selection)) {
+      if (!axes.has(dim)) {
+        throw new Error(`xarray-ts: Dataset has no dimension "${dim}".`);
+      }
+      axes.set(dim, applyIndexer(axes.get(dim)!, indexer, dim));
+    }
+    return axes;
+  }
+
   /** @internal Build a DataArray for a variable with the Dataset's current selection applied. */
-  #dataArray(name: string): DataArray {
+  #dataArray(name: string, ops: readonly Op[] = []): DataArray {
     const variable = this.#vars.get(name)!;
     const axes = variable.dims.map((dim) => this.#axisFor(dim));
-    return new DataArray(variable, this.#allCoords(), axes);
+    return new DataArray(variable, this.#allCoords(), axes, ops);
   }
 
   /**
@@ -475,7 +534,7 @@ export class Dataset {
     return out;
   }
 
-  #subset(keep: Set<string>): Dataset {
+  #subset(keep: Set<string>, op: Op): Dataset {
     const vars = new Map<string, Variable>();
     const coords = new Map<string, Coord>();
     const coordNames = new Set<string>();
@@ -510,6 +569,7 @@ export class Dataset {
         attrs: this.attrs,
       },
       axesByDim,
+      ir.append(this.#ops, op),
     );
   }
 
@@ -531,7 +591,8 @@ export class Dataset {
   #reclassified(
     coordNames: Set<string>,
     dataVarNames: Set<string>,
-    vars: Map<string, Variable> = this.#vars,
+    vars: Map<string, Variable>,
+    op: Op,
   ): Dataset {
     const coords = new Map<string, Coord>();
     for (const [name, coord] of this.#rootCoords) {
@@ -542,10 +603,18 @@ export class Dataset {
       for (const dim of variable.dims) keepDims.add(dim);
     }
     const axesByDim = new Map([...this.#axesByDim].filter(([dim]) => keepDims.has(dim)));
-    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+    return new Dataset(
+      { vars, coords, coordNames, dataVarNames, attrs: this.attrs },
+      axesByDim,
+      ir.append(this.#ops, op),
+    );
   }
 
-  #renamed(varRenames: Record<string, string>, dimRenames: Record<string, string>): Dataset {
+  #renamed(
+    varRenames: Record<string, string>,
+    dimRenames: Record<string, string>,
+    op: Op,
+  ): Dataset {
     const dimTargets = new Set<string>();
     for (const [oldDim, newDim] of Object.entries(dimRenames)) {
       if (!this.#dimSizes.has(oldDim)) {
@@ -600,7 +669,11 @@ export class Dataset {
       axesByDim.set(dimRenames[oldDim] ?? oldDim, axis);
     }
 
-    return new Dataset({ vars, coords, coordNames, dataVarNames, attrs: this.attrs }, axesByDim);
+    return new Dataset(
+      { vars, coords, coordNames, dataVarNames, attrs: this.attrs },
+      axesByDim,
+      ir.append(this.#ops, op),
+    );
   }
 }
 

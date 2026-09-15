@@ -4,6 +4,7 @@
  * @module
  */
 import * as zarr from "zarrita";
+import * as ir from "./codegen/ir.js";
 import type { Dataset } from "./dataset.js";
 import { EnumerationError, NotImplementedError } from "./errors.js";
 import { childArrayNames, datasetFromGroup } from "./group.js";
@@ -45,7 +46,22 @@ export async function openDataset(store: Store, options: OpenOptions = {}): Prom
 
   const location = path === "/" ? zarr.root(source) : zarr.root(source).resolve(path);
   const group = await zarr.open(location, { kind: "group" });
-  return datasetFromGroup(group, names);
+  return datasetFromGroup(group, names, [openOp(store, path)]);
+}
+
+/**
+ * The `open_dataset` head for the operation log. The store expression is
+ * best-effort: a URL string when the store exposes one (a zarrita `FetchStore`),
+ * otherwise a bare `store` identifier the user substitutes. `engine="zarr"` is
+ * always emitted (xarray-ts opens zarr stores); a non-root `path` becomes `group=`.
+ */
+function openOp(store: Store, path: string): ir.OpenOp {
+  const url = (store as { url?: unknown }).url;
+  const source =
+    typeof url === "string" || url instanceof URL ? JSON.stringify(String(url)) : "store";
+  const kwargs: Record<string, unknown> = { engine: "zarr" };
+  if (path !== "/") kwargs.group = path;
+  return ir.open(source, kwargs);
 }
 
 /**
