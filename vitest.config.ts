@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
+    // The differential suite needs a Python/xarray env (via pixi) and is opt-in;
+    // it runs under its own config (`vitest.differential.config.ts`).
+    exclude: ["test/differential/**"],
     environment: "node",
     coverage: {
       provider: "v8",

@@ -5,3 +5,6 @@ coverage/
 .DS_Store
 .env
 xr-ts-tests/
+
+# pixi environments (the lockfile is committed, the env is not)
+.pixi/
