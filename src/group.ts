@@ -9,6 +9,7 @@
  * @module
  */
 import * as zarr from "zarrita";
+import type { Op } from "./codegen/ir.js";
 import { classifyVariables, isDimensionCoord, loadCoord } from "./coords.js";
 import { Dataset, type DatasetParts } from "./dataset.js";
 import type { Coord, Variable } from "./types.js";
@@ -41,6 +42,7 @@ export interface GroupNode {
 export async function datasetFromGroup(
   group: zarr.Group<zarr.Readable>,
   arrayNames: Iterable<string>,
+  ops: readonly Op[] = [],
 ): Promise<Dataset> {
   const names = [...arrayNames];
   const arrays = await Promise.all(
@@ -71,7 +73,7 @@ export async function datasetFromGroup(
     dataVarNames,
     attrs: group.attrs,
   };
-  return new Dataset(parts);
+  return new Dataset(parts, undefined, ops);
 }
 
 /**

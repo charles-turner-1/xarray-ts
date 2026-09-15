@@ -8,6 +8,9 @@
  */
 import * as zarr from "zarrita";
 import { applyIndexer, axisToZarr, fullAxis, sliceCoord, type AxisSel } from "./axis.js";
+import * as ir from "./codegen/ir.js";
+import type { Op } from "./codegen/ir.js";
+import { emit, renderPython, type RenderOptions } from "./codegen/emit.js";
 import { isLazyCoord, renameCoord, renameLazyCoord } from "./coords.js";
 import { isLabelSlice, lookupLabel, lookupLabelSlice, toSliceArg } from "./indexing.js";
 import { INSPECT, formatDims, type InspectFn, type InspectOptions } from "./repr.js";
@@ -25,16 +28,41 @@ export class DataArray {
   readonly #axes: AxisSel[];
   /** @internal All coordinates available from the parent Dataset (full, unsliced). */
   readonly #coords: ReadonlyMap<string, AnyCoord>;
+  /** @internal The operation log recording how this array was derived (for codegen). */
+  readonly #ops: readonly Op[];
 
-  constructor(variable: Variable, coords: ReadonlyMap<string, AnyCoord>, axes?: AxisSel[]) {
+  constructor(
+    variable: Variable,
+    coords: ReadonlyMap<string, AnyCoord>,
+    axes?: AxisSel[],
+    ops: readonly Op[] = [],
+  ) {
     this.variable = variable;
     this.#coords = coords;
     this.#axes = axes ?? variable.shape.map(fullAxis);
+    this.#ops = ops;
   }
 
   /** The variable's name. */
   get name(): string {
     return this.variable.name;
+  }
+
+  /**
+   * The recorded operation log — the transformations applied since the store was
+   * opened, from which {@link DataArray.toPython} generates equivalent xarray code.
+   */
+  get ops(): readonly Op[] {
+    return this.#ops;
+  }
+
+  /**
+   * Generate the xarray Python that reproduces this DataArray from its store.
+   *
+   * Each recorded operation emits its literal xarray call (see `CLAUDE.md`).
+   */
+  toPython(options?: RenderOptions): string {
+    return renderPython(emit(this.#ops), options);
   }
 
   /** Remaining dimensions after the current selection (integer-indexed dims are dropped). */
@@ -94,7 +122,12 @@ export class DataArray {
   rename(names: Record<string, string>): DataArray;
   rename(arg: string | Record<string, string>): DataArray {
     if (typeof arg === "string") {
-      return new DataArray({ ...this.variable, name: arg }, this.#coords, this.#axes);
+      return new DataArray(
+        { ...this.variable, name: arg },
+        this.#coords,
+        this.#axes,
+        ir.append(this.#ops, ir.rename("rename", arg)),
+      );
     }
 
     for (const key of Object.keys(arg)) {
@@ -122,17 +155,23 @@ export class DataArray {
           : renameCoord(coord, newName, arg),
       );
     }
-    return new DataArray(variable, coords, this.#axes);
+    // The dict form is xarray's general `rename({old: new})` (renames dims/coords).
+    return new DataArray(
+      variable,
+      coords,
+      this.#axes,
+      ir.append(this.#ops, ir.rename("rename", arg)),
+    );
   }
 
   /** Positional selection (xarray `.isel`). Returns a new lazy view. */
   isel(selection: IselSelection): DataArray {
-    const axes = this.#axes.slice();
-    for (const [dim, indexer] of Object.entries(selection)) {
-      const axisIndex = this.#requireDim(dim);
-      axes[axisIndex] = applyIndexer(axes[axisIndex]!, indexer, dim);
-    }
-    return new DataArray(this.variable, this.#coords, axes);
+    return new DataArray(
+      this.variable,
+      this.#coords,
+      this.#iselAxes(selection),
+      ir.append(this.#ops, ir.select("isel", selection)),
+    );
   }
 
   /**
@@ -161,7 +200,13 @@ export class DataArray {
         );
       }
     }
-    return this.isel(Object.fromEntries(targets.map((d) => [d, 0])));
+    const positional = Object.fromEntries(targets.map((d) => [d, 0]));
+    return new DataArray(
+      this.variable,
+      this.#coords,
+      this.#iselAxes(positional),
+      ir.append(this.#ops, ir.squeeze(dim)),
+    );
   }
 
   /**
@@ -215,7 +260,7 @@ export class DataArray {
         isLazyCoord(coord) ? renameLazyCoord(coord, name, dims) : renameCoord(coord, name, dims),
       );
     }
-    return new DataArray(variable, coords, this.#axes);
+    return new DataArray(variable, coords, this.#axes, ir.append(this.#ops, ir.swapDims(dims)));
   }
 
   /** Label-based selection (xarray `.sel`). Resolves labels via coordinates, then delegates to `isel`. */
@@ -237,7 +282,13 @@ export class DataArray {
         ? toSliceArg(lookupLabelSlice(coord, label))
         : lookupLabel(coord, label, opts);
     }
-    return this.isel(positional);
+    // Record the `sel` verbatim (labels + options), not the lowered positional isel.
+    return new DataArray(
+      this.variable,
+      this.#coords,
+      this.#iselAxes(positional),
+      ir.append(this.#ops, ir.select("sel", selection, opts.method ? opts : undefined)),
+    );
   }
 
   /** Stream the current selection and return the materialised chunk (or scalar). */
@@ -273,6 +324,20 @@ export class DataArray {
       lines.push(`attrs:  ${inspect(this.attrs, options)}`);
     }
     return lines.length ? `${header}\n${lines.map((l) => `  ${l}`).join("\n")}` : header;
+  }
+
+  /**
+   * @internal Axes after applying `selection` to the current ones — the shared
+   * axis-folding for `isel`/`sel`/`squeeze` that records no op (so callers can
+   * record the verbatim call they were invoked as).
+   */
+  #iselAxes(selection: IselSelection): AxisSel[] {
+    const axes = this.#axes.slice();
+    for (const [dim, indexer] of Object.entries(selection)) {
+      const axisIndex = this.#requireDim(dim);
+      axes[axisIndex] = applyIndexer(axes[axisIndex]!, indexer, dim);
+    }
+    return axes;
   }
 
   /** @internal Validate that a dimension exists in the current view. */
