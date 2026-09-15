@@ -33,6 +33,17 @@ export { NotImplementedError, EnumerationError } from "./errors.js";
 // to construct one without depending on `cftime-ts` directly.
 export { CFDatetime } from "cftime-ts";
 
+export type { Op } from "./codegen/ir.js";
+export {
+  emit,
+  renderPython,
+  renderArg,
+  raw,
+  type Call,
+  type PyExpr,
+  type RenderOptions,
+} from "./codegen/emit.js";
+
 export type {
   AnyCoord,
   Attrs,
