@@ -1,0 +1,19 @@
+[workspace]
+name = "xarray-ts"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+# Python side of the opt-in differential tests: the oracle runs generated xarray
+# Python against real xarray/zarr and reports the resulting dataset structure.
+# Node/npm are expected on PATH (pixi run preserves it) and provide vitest +
+# fast-check from node_modules; pixi provides only the Python toolchain.
+[dependencies]
+python = ">=3.11"
+xarray = ">=2024.10"
+zarr = ">=3"
+numpy = "*"
+
+[tasks]
+# Run the differential suite. Uses the repo's node_modules for vitest/fast-check
+# and this env's python (with xarray) for the oracle subprocess.
+test-differential = "npx vitest run --config vitest.differential.config.ts"
